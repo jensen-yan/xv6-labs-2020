@@ -1,9 +1,9 @@
 	#
         # interrupts and exceptions while in supervisor
         # mode come here.
-        #
+        # 在监管态发生中断和例外, 跳转到这里, 用户态中断呢?
         # push all registers, call kerneltrap(), restore, return.
-        #
+        # 存reg到栈中, call kerneltrap()函数, load reg, eret
 .globl kerneltrap
 .globl kernelvec
 .align 4

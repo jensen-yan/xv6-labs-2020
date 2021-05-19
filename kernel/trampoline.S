@@ -1,6 +1,6 @@
 	#
         # code to switch between user and kernel space.
-        #
+        # 在用户态, 核心态切换的代码, 这映射在相同虚地址上(trampoline), 切换页表继续执行
         # this code is mapped at the same virtual address
         # (TRAMPOLINE) in user and kernel space so that
         # it continues to work when it switches page tables.
@@ -19,13 +19,13 @@ uservec:
         # traps from user space start here,
         # in supervisor mode, but with a
         # user page table.
-        #
+        # trap.c会设置stvec指向这里, 用户空间例外就跳转到这里. 监管态有个user的页表?
         # sscratch points to where the process's p->trapframe is
         # mapped into user space, at TRAPFRAME.
-        #
+        # 进程的p->trapframe指向用户空间的TRAPFRAME, sscratch指向这里
         
 	# swap a0 and sscratch
-        # so that a0 is TRAPFRAME
+        # so that a0 is TRAPFRAME a0 指向p->trapframe 用于切换的栈空间
         csrrw a0, sscratch, a0
 
         # save the user registers in TRAPFRAME
