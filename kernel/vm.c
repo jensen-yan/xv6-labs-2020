@@ -7,7 +7,7 @@
 #include "fs.h"
 
 /*
- * the kernel's page table.
+ * the kernel's page table. 全局内核页表指针
  */
 pagetable_t kernel_pagetable;
 
@@ -17,13 +17,15 @@ extern char trampoline[]; // trampoline.S
 
 /*
  * create a direct-map page table for the kernel.
+ * 为内核建立一个直接映射的页表
  */
 void
 kvminit()
 {
-  kernel_pagetable = (pagetable_t) kalloc();
+  kernel_pagetable = (pagetable_t) kalloc();  // 分配一页作为内核页表根目录
   memset(kernel_pagetable, 0, PGSIZE);
 
+  // 为mmio设备分配直接映射的映射关系, 写入页表中
   // uart registers
   kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
 
@@ -31,19 +33,19 @@ kvminit()
   kvmmap(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
 
   // CLINT
-  kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W); // 这里会映射很多页, 4k=0x1000, 16页
 
   // PLIC
-  kvmmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+  kvmmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);  // 1024=0x400 页
 
-  // map kernel text executable and read-only.
+  // map kernel text executable and read-only. 代码段可读, 可执行
   kvmmap(KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
 
-  // map kernel data and the physical RAM we'll make use of.
+  // map kernel data and the physical RAM we'll make use of. 数据段和空闲段映射过去
   kvmmap((uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
 
   // map the trampoline for trap entry/exit to
-  // the highest virtual address in the kernel.
+  // the highest virtual address in the kernel. 物理地址在内核代码段中, 这里不是直接映射了!
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 }
 
@@ -52,8 +54,8 @@ kvminit()
 void
 kvminithart()
 {
-  w_satp(MAKE_SATP(kernel_pagetable));
-  sfence_vma();
+  w_satp(MAKE_SATP(kernel_pagetable));  // 打开分页机制了, 但内核代码段还是相同地址映射, 能继续执行
+  sfence_vma();   // 刷新tlb缓存, 每次更新页表就要刷新一下! 防止使用旧的页表
 }
 
 // Return the address of the PTE in page table pagetable
@@ -68,6 +70,7 @@ kvminithart()
 //   21..29 -- 9 bits of level-1 index.
 //   12..20 -- 9 bits of level-0 index.
 //    0..11 -- 12 bits of byte offset within the page.
+// 模拟硬件, 为虚拟内存一级一级找pte, 如果没有需要分配一个pte(alloc!=0就分配)
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
@@ -75,17 +78,17 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
     panic("walk");
 
   for(int level = 2; level > 0; level--) {
-    pte_t *pte = &pagetable[PX(level, va)];
+    pte_t *pte = &pagetable[PX(level, va)];   // 根据va去索引对应一级的pte, 获取指针
     if(*pte & PTE_V) {
-      pagetable = (pagetable_t)PTE2PA(*pte);
+      pagetable = (pagetable_t)PTE2PA(*pte);  // 根据pte的PPN去索引下一级页表基地址, level-1
     } else {
-      if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
+      if(!alloc || (pagetable = (pde_t*)kalloc()) == 0) // 找不到下一级页表, 分配一页作为页表
         return 0;
       memset(pagetable, 0, PGSIZE);
-      *pte = PA2PTE(pagetable) | PTE_V;
+      *pte = PA2PTE(pagetable) | PTE_V; // 写入这一级的pte中
     }
   }
-  return &pagetable[PX(0, va)];
+  return &pagetable[PX(0, va)]; // 返回最后一级的pte指针
 }
 
 // Look up a virtual address, return the physical address,
@@ -114,10 +117,11 @@ walkaddr(pagetable_t pagetable, uint64 va)
 // add a mapping to the kernel page table.
 // only used when booting.
 // does not flush TLB or enable paging.
+// 写入内核页表中, 只在启动用, 不刷新tlb, 还没打开页表映射
 void
 kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
 {
-  if(mappages(kernel_pagetable, va, sz, pa, perm) != 0)
+  if(mappages(kernel_pagetable, va, sz, pa, perm) != 0) // 直接映射到内核页表上
     panic("kvmmap");
 }
 
@@ -145,6 +149,7 @@ kvmpa(uint64 va)
 // physical addresses starting at pa. va and size might not
 // be page-aligned. Returns 0 on success, -1 if walk() couldn't
 // allocate a needed page-table page.
+// 在页表中建立一条映射关系(va->pa), 等价于写一条pte, 根据size大小一次性可以映射多页
 int
 mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 {
@@ -152,16 +157,16 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   pte_t *pte;
 
   a = PGROUNDDOWN(va);
-  last = PGROUNDDOWN(va + size - 1);
+  last = PGROUNDDOWN(va + size - 1);  // 虚地址va 4k地址对齐, 可能size很大, 要映射
   for(;;){
-    if((pte = walk(pagetable, a, 1)) == 0)
+    if((pte = walk(pagetable, a, 1)) == 0)  // 获取a地址对应的最后一级pte
       return -1;
     if(*pte & PTE_V)
       panic("remap");
-    *pte = PA2PTE(pa) | perm | PTE_V;
+    *pte = PA2PTE(pa) | perm | PTE_V; // 物理地址填入最后一级的pte
     if(a == last)
       break;
-    a += PGSIZE;
+    a += PGSIZE;    // 继续映射下一页
     pa += PGSIZE;
   }
   return 0;

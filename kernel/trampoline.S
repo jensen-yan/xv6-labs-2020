@@ -92,7 +92,7 @@ userret:
         # a0: TRAPFRAME, in user page table.
         # a1: user page table, for satp.
 
-        # switch to the user page table.
+        # switch to the user page table. 每次改satp后都需要刷新tlb
         csrw satp, a1
         sfence.vma zero, zero
 

@@ -343,12 +343,13 @@ sfence_vma()
 #define PXMASK          0x1FF // 9 bits
 #define PXSHIFT(level)  (PGSHIFT+(9*(level)))
 #define PX(level, va) ((((uint64) (va)) >> PXSHIFT(level)) & PXMASK)
+// level = 2, va右移 12 + 2 * 9 = 30位, 获取L2那9bit, 作为下标去索引页表数组的pte
 
 // one beyond the highest possible virtual address.
 // MAXVA is actually one bit less than the max allowed by
 // Sv39, to avoid having to sign-extend virtual addresses
-// that have the high bit set.
+// that have the high bit set. sv39模式下最大空间 = 很大了
 #define MAXVA (1L << (9 + 9 + 9 + 12 - 1))
 
 typedef uint64 pte_t;
-typedef uint64 *pagetable_t; // 512 PTEs
+typedef uint64 *pagetable_t; // 512 PTEs, 注意这是指向页表根的指针， 可能是内核/用户页表

@@ -22,6 +22,7 @@ static void freeproc(struct proc *p);
 extern char trampoline[]; // trampoline.S
 
 // initialize the proc table at boot time.
+// 初始化进程页表
 void
 procinit(void)
 {
@@ -33,15 +34,15 @@ procinit(void)
 
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
-      // guard page.
+      // guard page. 为每个进程分配一页的内核栈, 写入当前全局内核页表中
       char *pa = kalloc();
       if(pa == 0)
         panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
+      uint64 va = KSTACK((int) (p - proc)); // 这里流了一个空白页, 作为缓冲区v=0, 防止内核栈溢出
       kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
+      p->kstack = va;   // 进程栈指针赋值
   }
-  kvminithart();
+  kvminithart();  // 重新写satp, 更新页表翻译, 虽然根目录没改, 但需要刷新tlb
 }
 
 // Must be called with interrupts disabled,
