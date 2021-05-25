@@ -10,12 +10,12 @@ struct elfhdr {
   ushort machine;
   uint version;
   uint64 entry;
-  uint64 phoff;
+  uint64 phoff; // prog程序段偏移
   uint64 shoff;
   uint flags;
   ushort ehsize;
   ushort phentsize;
-  ushort phnum;
+  ushort phnum; // 程序段个数, xv6中=1
   ushort shentsize;
   ushort shnum;
   ushort shstrndx;

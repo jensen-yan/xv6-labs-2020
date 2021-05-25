@@ -92,7 +92,7 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
 }
 
 // Look up a virtual address, return the physical address,
-// or 0 if not mapped.
+// or 0 if not mapped.          给定虚地址, 找到物理地址
 // Can only be used to look up user pages.
 uint64
 walkaddr(pagetable_t pagetable, uint64 va)
@@ -129,6 +129,7 @@ kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
 // a physical address. only needed for
 // addresses on the stack.
 // assumes va is page aligned.
+// 把内核虚地址翻译成物理地址, 只在栈上用, va对齐
 uint64
 kvmpa(uint64 va)
 {
@@ -175,6 +176,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 // Remove npages of mappings starting from va. va must be
 // page-aligned. The mappings must exist.
 // Optionally free the physical memory.
+// 从va开始的npage 解除映射关系, do_free会释放物理内存
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
@@ -199,7 +201,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
   }
 }
 
-// create an empty user page table.
+// create an empty user page table. 分配一个空的用户页
 // returns 0 if out of memory.
 pagetable_t
 uvmcreate()
@@ -215,6 +217,7 @@ uvmcreate()
 // Load the user initcode into address 0 of pagetable,
 // for the very first process.
 // sz must be less than a page.
+// 把src位置的user initcode 加载到页表虚地址0地址上
 void
 uvminit(pagetable_t pagetable, uchar *src, uint sz)
 {
@@ -230,6 +233,7 @@ uvminit(pagetable_t pagetable, uchar *src, uint sz)
 
 // Allocate PTEs and physical memory to grow process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
+// 申请堆空间, 从oldsz扩大变成newsz, 申请物理内存并映射写入pte
 uint64
 uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
@@ -246,7 +250,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
-    memset(mem, 0, PGSIZE);
+    memset(mem, 0, PGSIZE); // 把虚地址a映射到分配的物理地址mem上
     if(mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
       kfree(mem);
       uvmdealloc(pagetable, a, oldsz);
@@ -260,6 +264,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 // newsz.  oldsz and newsz need not be page-aligned, nor does newsz
 // need to be less than oldsz.  oldsz can be larger than the actual
 // process size.  Returns the new process size.
+// 把空间从oldsz缩小成newsz, 返回newsz新的进程空间
 uint64
 uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
@@ -267,7 +272,7 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
     return oldsz;
 
   if(PGROUNDUP(newsz) < PGROUNDUP(oldsz)){
-    int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
+    int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;  // 要释放的页数
     uvmunmap(pagetable, PGROUNDUP(newsz), npages, 1);
   }
 
@@ -276,6 +281,7 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 
 // Recursively free page-table pages.
 // All leaf mappings must already have been removed.
+// 递归释放整个页表, 叶子映射之前已经被清空了,uvmunmap先做了这一工作.
 void
 freewalk(pagetable_t pagetable)
 {
@@ -285,7 +291,7 @@ freewalk(pagetable_t pagetable)
     if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
       // this PTE points to a lower-level page table.
       uint64 child = PTE2PA(pte);
-      freewalk((pagetable_t)child);
+      freewalk((pagetable_t)child);   // 递归释放孩子页表
       pagetable[i] = 0;
     } else if(pte & PTE_V){
       panic("freewalk: leaf");
@@ -296,6 +302,7 @@ freewalk(pagetable_t pagetable)
 
 // Free user memory pages,
 // then free page-table pages.
+// 清空sz的物理内存, 并清空整个用户页表
 void
 uvmfree(pagetable_t pagetable, uint64 sz)
 {
@@ -310,6 +317,7 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // physical memory.
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
+// 给定父页表, 子页表, 拷贝父页表和物理内存
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
@@ -319,7 +327,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
+    if((pte = walk(old, i, 0)) == 0)  // 获取父页表pte
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
@@ -327,8 +335,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
       goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+    memmove(mem, (char*)pa, PGSIZE);  // 拷贝父的物理内存到新的物理页了
+    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){  // 映射关系写入子页表
       kfree(mem);
       goto err;
     }
@@ -342,6 +350,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
 // mark a PTE invalid for user access.
 // used by exec for the user stack guard page.
+// 让页表U标志清零, exec保护页使用
 void
 uvmclear(pagetable_t pagetable, uint64 va)
 {
@@ -356,6 +365,7 @@ uvmclear(pagetable_t pagetable, uint64 va)
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
+// 把内核src内容拷贝给用户页表的虚地址dstva上, 长len 
 int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
@@ -381,6 +391,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 // Copy from user to kernel.
 // Copy len bytes to dst from virtual address srcva in a given page table.
 // Return 0 on success, -1 on error.
+// 把用户srcva内容拷贝给内核dst位置
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {

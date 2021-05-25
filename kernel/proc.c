@@ -155,12 +155,13 @@ freeproc(struct proc *p)
 
 // Create a user page table for a given process,
 // with no user memory, but with trampoline pages.
+// 给进程p分配一个用户页表, 没有用户内存, 有trampoline蹦床页和trapframe例外栈页
 pagetable_t
 proc_pagetable(struct proc *p)
 {
   pagetable_t pagetable;
 
-  // An empty page table.
+  // An empty page table. 分配一个空的用户页
   pagetable = uvmcreate();
   if(pagetable == 0)
     return 0;
@@ -169,6 +170,7 @@ proc_pagetable(struct proc *p)
   // at the highest user virtual address.
   // only the supervisor uses it, on the way
   // to/from user space, so not PTE_U.
+  // 把当前用户虚地址空间最高蹦床页, 映射到固定的物理页上(所有进程用同一个蹦床页, 只有supervisor态才使用)
   if(mappages(pagetable, TRAMPOLINE, PGSIZE,
               (uint64)trampoline, PTE_R | PTE_X) < 0){
     uvmfree(pagetable, 0);
@@ -176,6 +178,7 @@ proc_pagetable(struct proc *p)
   }
 
   // map the trapframe just below TRAMPOLINE, for trampoline.S.
+  // 把虚地址蹦床页下面的trapframe页映射到以前给每个进程分配的物理栈页(何时分配的?)
   if(mappages(pagetable, TRAPFRAME, PGSIZE,
               (uint64)(p->trapframe), PTE_R | PTE_W) < 0){
     uvmunmap(pagetable, TRAMPOLINE, 1, 0);
