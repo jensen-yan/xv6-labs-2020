@@ -445,3 +445,30 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+// 递归打印页表这一级内容, 这里的level其实是反的, 但没事
+void
+vmprint_level(pagetable_t pagetable, int level){
+  if(level == 3) return;
+  for (int i = 0; i < PTESIZE; i++)
+  {
+    pte_t *pte = &pagetable[i];
+    if(*pte & PTE_V){
+      pagetable_t pa = (pagetable_t)PTE2PA(*pte);
+      for (int j = 0; j < level; j++)
+        printf(".. ");
+      printf("..%d: pte %p pa %p\n", i, *pte, pa);
+      vmprint_level(pa, level+1);
+    }
+  }
+}
+
+// 打印页表内容
+void
+vmprint(pagetable_t pagetable){
+  // 调用walk 获取pte
+  // 打印每一行pte
+  printf("page table %p\n", pagetable);
+  // 递归遍历每一个pte, 输出有效的
+  vmprint_level(pagetable, 0);
+}

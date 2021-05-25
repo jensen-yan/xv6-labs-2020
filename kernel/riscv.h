@@ -353,3 +353,4 @@ sfence_vma()
 
 typedef uint64 pte_t;
 typedef uint64 *pagetable_t; // 512 PTEs, 注意这是指向页表根的指针， 可能是内核/用户页表
+#define PTESIZE   512
