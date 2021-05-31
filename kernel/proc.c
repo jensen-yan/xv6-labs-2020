@@ -20,6 +20,11 @@ static void wakeup1(struct proc *chan);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
+extern void freewalk(pagetable_t);
+
+extern pagetable_t kernel_pagetable;  // 能索引到全局那个
+extern char etext[]; 
+extern char trampoline[]; // trampoline.S
 
 // initialize the proc table at boot time.
 // 初始化进程页表
@@ -32,15 +37,17 @@ procinit(void)
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
 
+      // 移动到allocproc中去吧, 分配时候再初始化页表
       // Allocate a page for the process's kernel stack.
       // Map it high in memory, followed by an invalid
       // guard page. 为每个进程分配一页的内核栈, 写入当前全局内核页表中
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc)); // 这里流了一个空白页, 作为缓冲区v=0, 防止内核栈溢出
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;   // 进程栈指针赋值
+
+      // char *pa = kalloc();
+      // if(pa == 0)
+      //   panic("kalloc");
+      // uint64 va = KSTACK((int) (p - proc)); // 这里流了一个空白页, 作为缓冲区v=0, 防止内核栈溢出
+      // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
+      // p->kstack = va;   // 进程栈指针赋值
   }
   kvminithart();  // 重新写satp, 更新页表翻译, 虽然根目录没改, 但需要刷新tlb
 }
@@ -114,6 +121,17 @@ found:
     return 0;
   }
 
+  // A kernel page table = 全局的kernel_pagetable
+  p->kpagetable = user_kvminit();
+  // procinit 移动过来的, 映射内核栈
+  char *pa = kalloc();  
+  if(pa == 0)
+    panic("kalloc");
+  uint64 va = TRAMPOLINE - 2*PGSIZE;    // 内核栈固定放在这里
+  // kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);  // 映射关系不写到全局页表中
+  p->kstack = va;   // 进程栈指针赋值
+  mappages(p->kpagetable, va, PGSIZE, (uint64)pa, PTE_R | PTE_W); // 映射内核堆栈到进程内核页表中
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -140,9 +158,12 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if(p->pagetable)
+  if(p->kpagetable) // 先解除所有内核页表的映射关系
+    proc_free_kernel_pagetable(p->kpagetable, p->sz, p->kstack);
+  if(p->pagetable)  // 并释放物理空间
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
+  p->kpagetable = 0;
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -197,6 +218,25 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);
+}
+
+// 释放用户内核页表, 主要是解除所有映射关系(叶子节点的)
+void
+proc_free_kernel_pagetable(pagetable_t pagetable, uint64 sz, uint64 kstack)
+{
+  // 把user_kvminit申请的都释放了
+  uvmunmap(pagetable, UART0,    1, 0);
+  uvmunmap(pagetable, VIRTIO0,  1, 0);
+  uvmunmap(pagetable, CLINT,    0x10000 / PGSIZE, 0);
+  uvmunmap(pagetable, PLIC,     0x400000/ PGSIZE, 0);
+  uvmunmap(pagetable, KERNBASE, ((uint64)etext-KERNBASE) / PGSIZE, 0);  // 这里代码段能释放吗?
+  uvmunmap(pagetable, (uint64)etext, (PHYSTOP-(uint64)etext) / PGSIZE, 0);
+  uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+  
+  // uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 0);  // 释放整个堆空间? 需要把用户页表映射拷贝到内核页表, 这里还没做吧
+
+  uvmunmap(pagetable, kstack, 1, 1);  // 释放内核栈并释放物理空间
+  freewalk(pagetable);
 }
 
 // a user program that calls exec("/init")
@@ -477,7 +517,12 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+        // 感觉要在swtch之前切换页表吧
+        w_satp(MAKE_SATP(p->kpagetable));
+        sfence_vma();
         swtch(&c->context, &p->context);
+        w_satp(MAKE_SATP(kernel_pagetable));  // 进程结束, 切换回initcode, 全局的内核页表?
+        sfence_vma();
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.

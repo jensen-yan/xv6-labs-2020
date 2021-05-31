@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table. 全局内核页表指针
@@ -47,6 +49,39 @@ kvminit()
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel. 物理地址在内核代码段中, 这里不是直接映射了!
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+}
+
+// 初始化user的kernel 页表, 类似kvminit
+pagetable_t
+user_kvminit()
+{
+  pagetable_t pagetable = (pagetable_t) kalloc();  // 分配一页作为内核页表根目录
+  memset(pagetable, 0, PGSIZE);
+
+  // 为mmio设备分配直接映射的映射关系, 写入页表中
+  // uart registers
+  mappages(pagetable, UART0, PGSIZE, UART0, PTE_R | PTE_W);
+
+  // virtio mmio disk interface
+  mappages(pagetable, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W);
+
+  // CLINT
+  mappages(pagetable, CLINT, 0x10000, CLINT, PTE_R | PTE_W); // 这里会映射很多页, 4k=0x1000, 16页
+
+  // PLIC
+  mappages(pagetable, PLIC, 0x400000, PLIC, PTE_R | PTE_W);  // 1024=0x400 页
+
+  // map kernel text executable and read-only. 代码段可读, 可执行
+  mappages(pagetable, KERNBASE, (uint64)etext-KERNBASE, KERNBASE,  PTE_R | PTE_X);
+
+  // map kernel data and the physical RAM we'll make use of. 数据段和空闲段映射过去
+  mappages(pagetable, (uint64)etext, PHYSTOP-(uint64)etext, (uint64)etext, PTE_R | PTE_W);
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel. 物理地址在内核代码段中, 这里不是直接映射了!
+  mappages(pagetable, TRAMPOLINE, PGSIZE, (uint64)trampoline, PTE_R | PTE_X);
+
+  return pagetable;
 }
 
 // Switch h/w page table register to the kernel's page table,
@@ -137,7 +172,8 @@ kvmpa(uint64 va)
   pte_t *pte;
   uint64 pa;
   
-  pte = walk(kernel_pagetable, va, 0);
+  struct proc *proc = myproc();
+  pte = walk(proc->kpagetable , va, 0);   // 改成调用当前页表的!
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
