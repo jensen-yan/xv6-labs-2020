@@ -227,13 +227,13 @@ proc_free_kernel_pagetable(pagetable_t pagetable, uint64 sz, uint64 kstack)
   // 把user_kvminit申请的都释放了
   uvmunmap(pagetable, UART0,    1, 0);
   uvmunmap(pagetable, VIRTIO0,  1, 0);
-  uvmunmap(pagetable, CLINT,    0x10000 / PGSIZE, 0);
+  // uvmunmap(pagetable, CLINT,    0x10000 / PGSIZE, 0);
   uvmunmap(pagetable, PLIC,     0x400000/ PGSIZE, 0);
   uvmunmap(pagetable, KERNBASE, ((uint64)etext-KERNBASE) / PGSIZE, 0);  // 这里代码段能释放吗?
   uvmunmap(pagetable, (uint64)etext, (PHYSTOP-(uint64)etext) / PGSIZE, 0);
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   
-  // uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 0);  // 释放整个堆空间? 需要把用户页表映射拷贝到内核页表, 这里还没做吧
+  uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 0);  // 释放整个堆空间? 需要把用户页表映射拷贝到内核页表, 这里还没做吧
 
   uvmunmap(pagetable, kstack, 1, 1);  // 释放内核栈并释放物理空间
   freewalk(pagetable);
@@ -263,6 +263,9 @@ userinit(void)
   // allocate one user page and copy init's instructions
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
+  pte_t *pte  = walk(p->pagetable,  0, 0);
+  pte_t *kpte = walk(p->kpagetable, 0, 1); // 从0地址开始找pte并分配
+  *kpte = (*pte) & ~PTE_U; // 内核页表项目相同, 只是没有U
   p->sz = PGSIZE;
 
   // prepare for the very first "return" from kernel to user.
@@ -317,6 +320,14 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+  // 拷贝映射关系到内核页表中, 这是子进程的!
+  for (int j = 0; j < p->sz; j+=PGSIZE)
+  {
+    pte_t *pte  = walk(np->pagetable,  j, 0);
+    pte_t *kpte = walk(np->kpagetable, j, 1); // 从0地址开始找pte并分配
+    *kpte = (*pte) & ~PTE_U; // 内核页表项目相同, 只是没有U
+  }
+  
   np->sz = p->sz;
 
   np->parent = p;

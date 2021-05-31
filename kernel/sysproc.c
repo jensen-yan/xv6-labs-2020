@@ -49,6 +49,22 @@ sys_sbrk(void)
   addr = myproc()->sz;
   if(growproc(n) < 0)
     return -1;
+
+  struct proc *p = myproc();
+  if(n > 0){
+    for (int j = addr; j < addr+n; j+=PGSIZE)
+    {
+      pte_t *pte  = walk(p->pagetable,  j, 0);
+      pte_t *kpte = walk(p->kpagetable, j, 1); // 从0地址开始找pte并分配
+      *kpte = (*pte) & ~PTE_U; // 内核页表项目相同, 只是没有U
+    }
+  }else{
+    for (int j = addr - PGSIZE; j >= addr+n; j-=PGSIZE)
+    {
+      uvmunmap(p->kpagetable, j, 1, 0);
+    }
+  }
+
   return addr;
 }
 

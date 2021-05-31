@@ -52,6 +52,8 @@ exec(char *path, char **argv)
     uint64 sz1;
     if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz)) == 0)
       goto bad; // 申请vaddr+memsz大小的用户空间, 全部用0填充了
+    if(sz1 >= PLIC)
+      goto bad;
     sz = sz1;
     if(ph.vaddr % PGSIZE != 0)
       goto bad;
@@ -118,6 +120,16 @@ exec(char *path, char **argv)
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);  // 释放就的页表
+
+  // 先释放原来的k页表
+  uvmunmap(p->kpagetable, 0, PGROUNDUP(oldsz)/PGSIZE, 0);
+  for (int j = 0; j < sz; j+=PGSIZE)
+  {
+    pte_t *pte  = walk(p->pagetable,  j, 0);
+    pte_t *kpte = walk(p->kpagetable, j, 1); // 从0地址开始找pte并分配
+    *kpte = (*pte) & ~PTE_U; // 内核页表项目相同, 只是没有U
+  }
+  
 
   if(p->pid == 1)
     vmprint(p->pagetable);
