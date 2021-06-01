@@ -86,22 +86,22 @@ uservec:
 
 .globl userret
 userret:
-        # userret(TRAPFRAME, pagetable)
+        # userret(TRAPFRAME, pagetable) usertrapret跳转过来, 这里会传入两个参数
         # switch from kernel to user.
         # usertrapret() calls here.
         # a0: TRAPFRAME, in user page table.
         # a1: user page table, for satp.
 
-        # switch to the user page table.
+        # switch to the user page table. 切换会用户页表
         csrw satp, a1
         sfence.vma zero, zero
 
-        # put the saved user a0 in sscratch, so we
-        # can swap it with our a0 (TRAPFRAME) in the last step.
+        # put the saved user a0 in sscratch, so we 获取之前存在proc的sscratch, 112存的是a0返回值
+        # can swap it with our a0 (TRAPFRAME) in the last step. 先load到t0, 再交互到sscratch中, 后面恢复到a0中
         ld t0, 112(a0)
         csrw sscratch, t0
 
-        # restore all but a0 from TRAPFRAME
+        # restore all but a0 from TRAPFRAME, 从参数a0(tramframe)中恢复寄存器
         ld ra, 40(a0)
         ld sp, 48(a0)
         ld gp, 56(a0)
@@ -134,8 +134,11 @@ userret:
         ld t6, 280(a0)
 
 	# restore user a0, and save TRAPFRAME in sscratch
+        # 恢复原来a0存的返回值, write返回1, 之前存在sscratch中
+        # 现在sscratch=0x3fffffe000, trapframe地址, 之后syscall到uservec又会使用
         csrrw a0, sscratch, a0
         
         # return to user mode and user pc.
-        # usertrapret() set up sstatus and sepc.
+        # usertrapret() set up sstatus and sepc. 从这里返回用户态, 进入调用syscall的地址, 也就是ecall下一句
+        # pc = sepc=0xdea+4, 然后下一步执行ret
         sret

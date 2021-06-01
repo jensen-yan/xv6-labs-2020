@@ -42,7 +42,7 @@ usertrap(void)
     panic("usertrap: not from user mode");
 
   // send interrupts and exceptions to kerneltrap(),
-  // since we're now in the kernel.
+  // since we're now in the kernel. 当主管态发生中断例外, 跳转到kernelvec去处理
   w_stvec((uint64)kernelvec);
 
   struct proc *p = myproc();
@@ -51,17 +51,17 @@ usertrap(void)
   p->trapframe->epc = r_sepc();
   
   if(r_scause() == 8){
-    // system call
+    // system call 对系统调用, 进行处理
 
     if(p->killed)
       exit(-1);
 
     // sepc points to the ecall instruction,
-    // but we want to return to the next instruction.
+    // but we want to return to the next instruction. 对于syscall, 返回到下一条地址去
     p->trapframe->epc += 4;
 
     // an interrupt will change sstatus &c registers,
-    // so don't enable until done with those registers.
+    // so don't enable until done with those registers. 对syscall处理过程中, 可以处理嵌套中断, 其他中断可能不能嵌套
     intr_on();
 
     syscall();
@@ -80,7 +80,7 @@ usertrap(void)
   if(which_dev == 2)
     yield();
 
-  usertrapret();
+  usertrapret();  // 处理完syscall/中断后, 返回到用户态
 }
 
 //
@@ -93,15 +93,16 @@ usertrapret(void)
 
   // we're about to switch the destination of traps from
   // kerneltrap() to usertrap(), so turn off interrupts until
-  // we're back in user space, where usertrap() is correct.
+  // we're back in user space, where usertrap() is correct. 进入用户态前关中断
   intr_off();
 
   // send syscalls, interrupts, and exceptions to trampoline.S
+  // 之后发送例外, 进入uservec去处理了, 在trampoline.S中定义了两个符号, 相减后加上高地址为实际虚地址
   w_stvec(TRAMPOLINE + (uservec - trampoline));
 
   // set up trapframe values that uservec will need when
   // the process next re-enters the kernel.
-  p->trapframe->kernel_satp = r_satp();         // kernel page table
+  p->trapframe->kernel_satp = r_satp();         // kernel page table, 当前还用的内核页表, 存入trapframe中
   p->trapframe->kernel_sp = p->kstack + PGSIZE; // process's kernel stack
   p->trapframe->kernel_trap = (uint64)usertrap;
   p->trapframe->kernel_hartid = r_tp();         // hartid for cpuid()
@@ -109,21 +110,24 @@ usertrapret(void)
   // set up the registers that trampoline.S's sret will use
   // to get to user space.
   
-  // set S Previous Privilege mode to User.
+  // set S Previous Privilege mode to User. 设置sstatus, 变成用户态
   unsigned long x = r_sstatus();
-  x &= ~SSTATUS_SPP; // clear SPP to 0 for user mode
-  x |= SSTATUS_SPIE; // enable interrupts in user mode
+  x &= ~SSTATUS_SPP; // clear SPP to 0 for user mode, sret进入用户态
+  x |= SSTATUS_SPIE; // enable interrupts in user mode, 用户态打开中断
   w_sstatus(x);
 
   // set S Exception Program Counter to the saved user pc.
+  // 设置sret要返回的pc, 就是user陷入的pc, 对syscall还会加4
   w_sepc(p->trapframe->epc);
 
-  // tell trampoline.S the user page table to switch to.
+  // tell trampoline.S the user page table to switch to. 存在proc结构的用户页表位置, 传参用
   uint64 satp = MAKE_SATP(p->pagetable);
 
   // jump to trampoline.S at the top of memory, which 
   // switches to the user page table, restores user registers,
-  // and switches to user mode with sret.
+  // and switches to user mode with sret. 
+  // 这里会调用fn, 跳到userret, 参数a0=trapframe, a1=satp
+  // 会恢复用户reg, 切换会用户页表, sret返回用户态
   uint64 fn = TRAMPOLINE + (userret - trampoline);
   ((void (*)(uint64,uint64))fn)(TRAPFRAME, satp);
 }
