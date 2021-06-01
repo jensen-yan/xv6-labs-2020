@@ -132,3 +132,16 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+void
+backtrace(void)
+{
+  uint64 fp = r_fp();
+  uint64 up = PGROUNDUP(fp);
+  printf("backtrace:\n");
+  while (fp < up)
+  {
+    printf("%p\n", *((uint64*)(fp-8))); // 先转换成指针, 再求值
+    fp = *((uint64*)(fp-16));   // 找到上一个帧再求值
+  }
+}
