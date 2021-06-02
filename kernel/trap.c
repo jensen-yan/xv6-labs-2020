@@ -67,6 +67,13 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){  // 这里处理中断
     // ok
+    p->intervalTicks++;
+    if(p->ticks == p->intervalTicks){
+      p->intervalTicks = 0;
+      // 到时间, 去调用处理函数(用户态程序?)
+      // 改sepc 到0地址, sret返回用户空间时进入处理函数, 之后sepc = epc
+      p->trapframe->epc = p->handler;
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
