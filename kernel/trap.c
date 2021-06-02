@@ -65,7 +65,7 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  } else if((which_dev = devintr()) != 0){  // 这里处理中断
     // ok
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
@@ -77,7 +77,7 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2)  // 发送时钟中断, 放弃cpu, 调度别的进程
     yield();
 
   usertrapret();
@@ -173,6 +173,8 @@ clockintr()
 // returns 2 if timer interrupt,
 // 1 if other device,
 // 0 if not recognized.
+// 检查是否是外部中断or专家中断并处理
+// 2=time中断, 1 = 其他中断, 0=没识别
 int
 devintr()
 {

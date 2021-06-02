@@ -27,32 +27,33 @@ main(int argc, char *argv[])
   exit(0);
 }
 
-volatile static int count;
+volatile static int count;  // 全局变量
 
 void
 periodic()
 {
   count = count + 1;
-  printf("alarm!\n");
-  sigreturn();
+  printf("alarm!\n"); // 变量加1并打印
+  sigreturn();  // 返回?
 }
 
 // tests whether the kernel calls
 // the alarm handler even a single time.
+// 测试是否内核调用了alarm, 即便一次也要测试
 void
 test0()
 {
   int i;
   printf("test0 start\n");
   count = 0;
-  sigalarm(2, periodic);
-  for(i = 0; i < 1000*500000; i++){
+  sigalarm(2, periodic);  // 处理函数为periodic, 两次中断后进入处理函数?
+  for(i = 0; i < 1000*500000; i++){ // 循环5亿次
     if((i % 1000000) == 0)
-      write(2, ".", 1);
-    if(count > 0)
+      write(2, ".", 1);   // 每一百万打印一个点
+    if(count > 0) // count+1之后就跳出去
       break;
   }
-  sigalarm(0, 0);
+  sigalarm(0, 0); // 内核停止生成周期性的alarm调用
   if(count > 0){
     printf("test0 passed\n");
   } else {

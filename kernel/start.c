@@ -53,6 +53,7 @@ start()
 // which arrive at timervec in kernelvec.S,
 // which turns them into software interrupts for
 // devintr() in trap.c.
+// 机器模式下接受时钟中断, 进入timervec处理, 然后到decintr()
 void
 timerinit()
 {
@@ -60,7 +61,7 @@ timerinit()
   int id = r_mhartid();
 
   // ask the CLINT for a timer interrupt.
-  int interval = 1000000; // cycles; about 1/10th second in qemu.
+  int interval = 1000000; // cycles; about 1/10th second in qemu. 大概0.1s一次中断
   *(uint64*)CLINT_MTIMECMP(id) = *(uint64*)CLINT_MTIME + interval;
 
   // prepare information in scratch[] for timervec.
