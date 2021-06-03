@@ -102,22 +102,26 @@ sys_uptime(void)
 uint64
 sys_sigalarm(void)
 {
+  struct proc *p = myproc();
   int ticks = 0;
   uint64 handler;
   if(argint(0, &ticks) < 0)
     return -1;
   if(argaddr(1, &handler) < 0)
     return -1;
-  struct proc *p = myproc();
   p->ticks = ticks;
   p->handler = handler;
   p->intervalTicks = 0;
-  
+  p->sigReturned = 1; // 默认上一次handler调用了return
   return 0;
 }
 
 uint64
 sys_sigreturn(void)
 {
+  // 恢复存在proc中的reg
+  struct proc *p = myproc();
+  memmove(p->trapframe, p->sigTrapframe, sizeof(struct trapframe));
+  p->sigReturned = 1;
   return 0;
 }

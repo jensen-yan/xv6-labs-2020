@@ -108,4 +108,7 @@ struct proc {
   int ticks;                   // alarm 间隔时间
   uint64 handler;              // alarm 函数处理指针
   int intervalTicks;           // 距离上次调用过去了多少ticks
+  int sigReturned;             // 为1表示: 上一次handler调用了return
+  // 试着存trapframe试试, 这是分配在堆上的
+  struct trapframe *sigTrapframe;
 };

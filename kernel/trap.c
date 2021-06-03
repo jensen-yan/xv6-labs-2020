@@ -66,13 +66,17 @@ usertrap(void)
 
     syscall();
   } else if((which_dev = devintr()) != 0){  // 这里处理中断
-    // ok
-    p->intervalTicks++;
-    if(p->ticks == p->intervalTicks){
-      p->intervalTicks = 0;
-      // 到时间, 去调用处理函数(用户态程序?)
-      // 改sepc 到0地址, sret返回用户空间时进入处理函数, 之后sepc = epc
-      p->trapframe->epc = p->handler;
+    if(which_dev == 2 && p->sigReturned == 1){ // 对时钟中断, 且上次已经返回了, 才能去调用下一次的
+      p->intervalTicks++;
+      if(p->ticks == p->intervalTicks){
+        p->intervalTicks = 0;
+        // 先保持现场save trapframe -> p中
+        memmove(p->sigTrapframe, p->trapframe, sizeof(struct trapframe));
+        // 到时间, 去调用处理函数(用户态程序?)
+        // 改sepc 到0地址, sret返回用户空间时进入处理函数, 之后sepc = epc
+        p->trapframe->epc = p->handler;
+        p->sigReturned = 0;   // 等待return变成1
+      }
     }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
