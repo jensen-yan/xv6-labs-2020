@@ -43,13 +43,15 @@ sys_sbrk(void)
 {
   int addr;
   int n;
+  struct proc *p = myproc();
 
   if(argint(0, &n) < 0)
     return -1;
-  addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
-  return addr;
+  addr = p->sz;
+  // if(growproc(n) < 0)
+  //   return -1;
+  p->sz = p->sz + n;  // 只更新sz
+  return addr;  // 返回新分配区域的开始, 也是旧的大小
 }
 
 uint64
