@@ -50,6 +50,10 @@ sys_sbrk(void)
   addr = p->sz;
   // if(growproc(n) < 0)
   //   return -1;
+  uint64 sz = p->sz;
+  if(n < 0){  // 对缩小, 直接删除映射关系即可, 也不用释放物理内存
+    sz = uvmdealloc(p->pagetable, sz, sz + n);
+  }
   p->sz = p->sz + n;  // 只更新sz
   return addr;  // 返回新分配区域的开始, 也是旧的大小
 }

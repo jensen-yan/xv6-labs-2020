@@ -53,13 +53,23 @@ usertrap(void)
   if(r_scause() == 13 || r_scause() == 15){
     // page fault
     uint64 vaddr = r_stval();   // 虚地址
+    uint64 sp = p->trapframe->sp;   // 当前用户栈指针
+    uint64 spDown = PGROUNDDOWN(sp);
+    if(vaddr < spDown)  // 地址进入保护页, 杀了
+      exit(-1);
+
     vaddr = PGROUNDDOWN(vaddr);  // 缺失页低地址
+    if(vaddr >= p->sz)
+      exit(-1);  // 虚地址超过sbrk分配的了, 杀掉
     char *mem = kalloc();
-    memset(mem, 0, PGSIZE); // 申请一页, 映射到用户vaddr处
     if(mem == 0)
-      p->killed = 1;
-    if((mappages(p->pagetable, vaddr, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U)) != 0)
-      p->killed = 1;
+      exit(-1);
+    memset(mem, 0, PGSIZE); // 申请一页, 映射到用户vaddr处
+    if((mappages(p->pagetable, vaddr, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U)) != 0){
+      kfree(mem);
+      exit(-1);
+    }
+
   }else if(r_scause() == 8){
     // system call
 

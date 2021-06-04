@@ -8,14 +8,14 @@
 #include "kernel/memlayout.h"
 #include "kernel/riscv.h"
 
-#define REGION_SZ (1024 * 1024 * 1024)
+#define REGION_SZ (1024 * 1024 * 1024)  // 1G的空间=0x4000_0000
 
 void
 sparse_memory(char *s)
 {
   char *i, *prev_end, *new_end;
   
-  prev_end = sbrk(REGION_SZ);
+  prev_end = sbrk(REGION_SZ);   // 申请很大空间, 返回原来地址
   if (prev_end == (char*)0xffffffffffffffffL) {
     printf("sbrk() failed\n");
     exit(1);
@@ -23,7 +23,7 @@ sparse_memory(char *s)
   new_end = prev_end + REGION_SZ;
 
   for (i = prev_end + PGSIZE; i < new_end; i += 64 * PGSIZE)
-    *(char **)i = i;
+    *(char **)i = i;  // 每隔64页写一次
 
   for (i = prev_end + PGSIZE; i < new_end; i += 64 * PGSIZE) {
     if (*(char **)i != i) {
@@ -94,7 +94,7 @@ oom(char *s)
 }
 
 // run each test in its own process. run returns 1 if child's exit()
-// indicates success.
+// indicates success. 如果孩子成功, 返回1
 int
 run(void f(char *), char *s) {
   int pid;
@@ -106,7 +106,7 @@ run(void f(char *), char *s) {
     exit(1);
   }
   if(pid == 0) {
-    f(s);
+    f(s);   // 孩子去执行测试
     exit(0);
   } else {
     wait(&xstatus);
@@ -129,7 +129,7 @@ main(int argc, char *argv[])
   struct test {
     void (*f)(char *);
     char *s;
-  } tests[] = {
+  } tests[] = {   // 3个测试, 函数f+名字s
     { sparse_memory, "lazy alloc"},
     { sparse_memory_unmap, "lazy unmap"},
     { oom, "out of memory"},
