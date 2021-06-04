@@ -50,7 +50,17 @@ usertrap(void)
   // save user program counter.
   p->trapframe->epc = r_sepc();
   
-  if(r_scause() == 8){
+  if(r_scause() == 13 || r_scause() == 15){
+    // page fault
+    uint64 vaddr = r_stval();   // 虚地址
+    vaddr = PGROUNDDOWN(vaddr);  // 缺失页低地址
+    char *mem = kalloc();
+    memset(mem, 0, PGSIZE); // 申请一页, 映射到用户vaddr处
+    if(mem == 0)
+      p->killed = 1;
+    if((mappages(p->pagetable, vaddr, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U)) != 0)
+      p->killed = 1;
+  }else if(r_scause() == 8){
     // system call
 
     if(p->killed)
@@ -68,7 +78,7 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);  // 当出现其他traps是会报错!
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
   }

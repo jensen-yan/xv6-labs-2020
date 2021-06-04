@@ -4,7 +4,7 @@
 #include "user/user.h"
 #include "kernel/fcntl.h"
 
-// Parsed command representation
+// Parsed command representation 5种类型
 #define EXEC  1
 #define REDIR 2
 #define PIPE  3
@@ -13,7 +13,7 @@
 
 #define MAXARGS 10
 
-struct cmd {
+struct cmd {  // 只是execcmd结构一部分:type = exec
   int type;
 };
 
@@ -67,7 +67,7 @@ runcmd(struct cmd *cmd)
   if(cmd == 0)
     exit(1);
 
-  switch(cmd->type){
+  switch(cmd->type){  // 根据cmd不同类型去不同处理
   default:
     panic("runcmd");
 
@@ -75,7 +75,7 @@ runcmd(struct cmd *cmd)
     ecmd = (struct execcmd*)cmd;
     if(ecmd->argv[0] == 0)
       exit(1);
-    exec(ecmd->argv[0], ecmd->argv);
+    exec(ecmd->argv[0], ecmd->argv);  // 调用exec执行
     fprintf(2, "exec %s failed\n", ecmd->argv[0]);
     break;
 
@@ -156,17 +156,18 @@ main(void)
   }
 
   // Read and run input commands.
-  while(getcmd(buf, sizeof(buf)) >= 0){
+  while(getcmd(buf, sizeof(buf)) >= 0){   // 读取指令到buf中
     if(buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' '){
       // Chdir must be called by the parent, not the child.
+      // 对cd指令特别处理
       buf[strlen(buf)-1] = 0;  // chop \n
       if(chdir(buf+3) < 0)
         fprintf(2, "cannot cd %s\n", buf+3);
       continue;
     }
     if(fork1() == 0)
-      runcmd(parsecmd(buf));
-    wait(0);
+      runcmd(parsecmd(buf));  // fork, 子线程先解析buf内容, 再运行
+    wait(0);  // 父线程等子线程结束
   }
   exit(0);
 }
@@ -192,6 +193,7 @@ fork1(void)
 //PAGEBREAK!
 // Constructors
 
+// 给cmd结构体分配空间, 并返回cmd
 struct cmd*
 execcmd(void)
 {
@@ -307,13 +309,14 @@ gettoken(char **ps, char *es, char **q, char **eq)
   return ret;
 }
 
+// 类似get, 返回下一个可用字符的副本, 但不移除它. get会移除
 int
 peek(char **ps, char *es, char *toks)
 {
   char *s;
 
   s = *ps;
-  while(s < es && strchr(whitespace, *s))
+  while(s < es && strchr(whitespace, *s)) // strchr 获取char在string中的位置
     s++;
   *ps = s;
   return *s && strchr(toks, *s);
@@ -330,8 +333,8 @@ parsecmd(char *s)
   char *es;
   struct cmd *cmd;
 
-  es = s + strlen(s);
-  cmd = parseline(&s, es);
+  es = s + strlen(s);   // s的结束指针
+  cmd = parseline(&s, es);  // 解析一行
   peek(&s, es, "");
   if(s != es){
     fprintf(2, "leftovers: %s\n", s);
@@ -346,8 +349,8 @@ parseline(char **ps, char *es)
 {
   struct cmd *cmd;
 
-  cmd = parsepipe(ps, es);
-  while(peek(ps, es, "&")){
+  cmd = parsepipe(ps, es);  // 解析成管道?
+  while(peek(ps, es, "&")){   // 对 & ; 顺序执行两条命令
     gettoken(ps, es, 0, 0);
     cmd = backcmd(cmd);
   }
@@ -363,7 +366,7 @@ parsepipe(char **ps, char *es)
 {
   struct cmd *cmd;
 
-  cmd = parseexec(ps, es);
+  cmd = parseexec(ps, es);  // 当做exec去解析
   if(peek(ps, es, "|")){
     gettoken(ps, es, 0, 0);
     cmd = pipecmd(cmd, parsepipe(ps, es));
@@ -420,20 +423,20 @@ parseexec(char **ps, char *es)
   struct execcmd *cmd;
   struct cmd *ret;
 
-  if(peek(ps, es, "("))
+  if(peek(ps, es, "("))   // 看看是否左括号开头
     return parseblock(ps, es);
 
   ret = execcmd();
-  cmd = (struct execcmd*)ret;
+  cmd = (struct execcmd*)ret; // 转换成execcmd结构体
 
   argc = 0;
-  ret = parseredirs(ret, ps, es);
+  ret = parseredirs(ret, ps, es);   // 解析目录?
   while(!peek(ps, es, "|)&;")){
-    if((tok=gettoken(ps, es, &q, &eq)) == 0)
+    if((tok=gettoken(ps, es, &q, &eq)) == 0)  // 获取一个token
       break;
     if(tok != 'a')
       panic("syntax");
-    cmd->argv[argc] = q;
+    cmd->argv[argc] = q;    // 存入argv
     cmd->eargv[argc] = eq;
     argc++;
     if(argc >= MAXARGS)
