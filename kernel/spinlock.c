@@ -16,7 +16,7 @@ initlock(struct spinlock *lk, char *name)
   lk->cpu = 0;
 }
 
-// Acquire the lock.
+// Acquire the lock. 自旋直到获得锁
 // Loops (spins) until the lock is acquired.
 void
 acquire(struct spinlock *lk)
@@ -25,7 +25,7 @@ acquire(struct spinlock *lk)
   if(holding(lk))
     panic("acquire");
 
-  // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
+  // On RISC-V, sync_lock_test_and_set turns into an atomic swap: 原子交换
   //   a5 = 1
   //   s1 = &lk->locked
   //   amoswap.w.aq a5, a5, (s1)
@@ -35,7 +35,7 @@ acquire(struct spinlock *lk)
   // Tell the C compiler and the processor to not move loads or stores
   // past this point, to ensure that the critical section's memory
   // references happen strictly after the lock is acquired.
-  // On RISC-V, this emits a fence instruction.
+  // On RISC-V, this emits a fence instruction. fence指令, 保证顺序执行
   __sync_synchronize();
 
   // Record info about lock acquisition for holding() and debugging.
@@ -84,27 +84,27 @@ holding(struct spinlock *lk)
 // push_off/pop_off are like intr_off()/intr_on() except that they are matched:
 // it takes two pop_off()s to undo two push_off()s.  Also, if interrupts
 // are initially off, then push_off, pop_off leaves them off.
-
+// push_off/pop_off 类似intr_off/intro_on, 需要匹配好! 两个push必须有两个pop
 void
 push_off(void)
 {
-  int old = intr_get();
+  int old = intr_get(); // 获取当前中断是打开还是关闭
 
-  intr_off();
+  intr_off();   // 关中断
   if(mycpu()->noff == 0)
-    mycpu()->intena = old;
-  mycpu()->noff += 1;
+    mycpu()->intena = old;  // 表示push_off之前的中断开启状态
+  mycpu()->noff += 1;   // push_off的深度加1
 }
 
 void
 pop_off(void)
 {
   struct cpu *c = mycpu();
-  if(intr_get())
+  if(intr_get())  // 默认是关好中断了的
     panic("pop_off - interruptible");
   if(c->noff < 1)
     panic("pop_off");
-  c->noff -= 1;
+  c->noff -= 1;   // 深度--
   if(c->noff == 0 && c->intena)
-    intr_on();
+    intr_on();    // 如果push前就开中断, 就还原开中断
 }

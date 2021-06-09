@@ -180,13 +180,13 @@ devintr()
 
   if((scause & 0x8000000000000000L) &&
      (scause & 0xff) == 9){
-    // this is a supervisor external interrupt, via PLIC.
+    // this is a supervisor external interrupt, via PLIC. 通过PLIC产生的外部中断
 
-    // irq indicates which device interrupted.
+    // irq indicates which device interrupted. 询问plic是哪个设备
     int irq = plic_claim();
 
     if(irq == UART0_IRQ){
-      uartintr();
+      uartintr();   // 对uart, 产生uart中断
     } else if(irq == VIRTIO0_IRQ){
       virtio_disk_intr();
     } else if(irq){
@@ -195,11 +195,11 @@ devintr()
 
     // the PLIC allows each device to raise at most one
     // interrupt at a time; tell the PLIC the device is
-    // now allowed to interrupt again.
+    // now allowed to interrupt again. plic允许每个设备产生最多一次中断, 现在可以重新产生中断了
     if(irq)
       plic_complete(irq);
 
-    return 1;
+    return 1;   // 返回设备中断, 1
   } else if(scause == 0x8000000000000001L){
     // software interrupt from a machine-mode timer interrupt,
     // forwarded by timervec in kernelvec.S.

@@ -5,7 +5,7 @@
 //   newline -- end of line
 //   control-h -- backspace
 //   control-u -- kill line
-//   control-d -- end of file
+//   control-d -- end of file   ctrl+d表示EOF, 文件结束
 //   control-p -- print process list
 //
 
@@ -29,12 +29,12 @@
 // send one character to the uart.
 // called by printf, and to echo input characters,
 // but not from write().
-//
+// 发送1个char给uart, 并echo
 void
 consputc(int c)
 {
   if(c == BACKSPACE){
-    // if the user typed backspace, overwrite with a space.
+    // if the user typed backspace, overwrite with a space. 用户删除, 覆盖
     uartputc_sync('\b'); uartputc_sync(' '); uartputc_sync('\b');
   } else {
     uartputc_sync(c);
@@ -46,15 +46,15 @@ struct {
   
   // input
 #define INPUT_BUF 128
-  char buf[INPUT_BUF];
-  uint r;  // Read index
+  char buf[INPUT_BUF];  // 一个大buf
+  uint r;  // Read index 读, 写, 编辑的下标
   uint w;  // Write index
   uint e;  // Edit index
 } cons;
 
 //
 // user write()s to the console go here.
-//
+// 用户write调用->filewrite
 int
 consolewrite(int user_src, uint64 src, int n)
 {
@@ -65,7 +65,7 @@ consolewrite(int user_src, uint64 src, int n)
     char c;
     if(either_copyin(&c, user_src, src+i, 1) == -1)
       break;
-    uartputc(c);
+    uartputc(c);  // 每个字符输出
   }
   release(&cons.lock);
 
@@ -77,7 +77,8 @@ consolewrite(int user_src, uint64 src, int n)
 // copy (up to) a whole input line to dst.
 // user_dist indicates whether dst is a user
 // or kernel address.
-//
+// 通过中断, 等待输入到达, 数据已经存入cons.buf中了, 拷贝到用户空间
+// 等一整行到达后, 返回到用户空间
 int
 consoleread(int user_dst, uint64 dst, int n)
 {
@@ -89,16 +90,16 @@ consoleread(int user_dst, uint64 dst, int n)
   acquire(&cons.lock);
   while(n > 0){
     // wait until interrupt handler has put some
-    // input into cons.buffer.
-    while(cons.r == cons.w){
+    // input into cons.buffer. 等待中断处理程序把输入放入cons.buf中
+    while(cons.r == cons.w){  // 有新东西, w++ > r
       if(myproc()->killed){
         release(&cons.lock);
         return -1;
       }
-      sleep(&cons.r, &cons.lock);
+      sleep(&cons.r, &cons.lock); // 没东西就先睡了, 等中断唤醒自己
     }
 
-    c = cons.buf[cons.r++ % INPUT_BUF];
+    c = cons.buf[cons.r++ % INPUT_BUF];   // 从buf中读取c
 
     if(c == C('D')){  // end-of-file
       if(n < target){
@@ -109,7 +110,7 @@ consoleread(int user_dst, uint64 dst, int n)
       break;
     }
 
-    // copy the input byte to the user-space buffer.
+    // copy the input byte to the user-space buffer. 拷贝到用户空间
     cbuf = c;
     if(either_copyout(user_dst, dst, &cbuf, 1) == -1)
       break;
@@ -119,7 +120,7 @@ consoleread(int user_dst, uint64 dst, int n)
 
     if(c == '\n'){
       // a whole line has arrived, return to
-      // the user-level read().
+      // the user-level read(). 一整行到了了, 返回用户空间read()
       break;
     }
   }
@@ -133,7 +134,8 @@ consoleread(int user_dst, uint64 dst, int n)
 // uartintr() calls this for input character.
 // do erase/kill processing, append to cons.buf,
 // wake up consoleread() if a whole line has arrived.
-//
+// console输入中断处理, uart接收到字符了
+// erase/kill, 加到cons.buf. 如果一整行到了, 唤醒consoleread.
 void
 consoleintr(int c)
 {
@@ -161,15 +163,15 @@ consoleintr(int c)
     if(c != 0 && cons.e-cons.r < INPUT_BUF){
       c = (c == '\r') ? '\n' : c;
 
-      // echo back to the user.
+      // echo back to the user. echo输出字符c给用户
       consputc(c);
 
-      // store for consumption by consoleread().
+      // store for consumption by consoleread(). 把字符c存入cons.buf中
       cons.buf[cons.e++ % INPUT_BUF] = c;
 
       if(c == '\n' || c == C('D') || cons.e == cons.r+INPUT_BUF){
         // wake up consoleread() if a whole line (or end-of-file)
-        // has arrived.
+        // has arrived. 对一整行\n 或者 EOF了, 唤醒consoleread()
         cons.w = cons.e;
         wakeup(&cons.r);
       }
@@ -185,10 +187,10 @@ consoleinit(void)
 {
   initlock(&cons.lock, "cons");
 
-  uartinit();
+  uartinit();   //配置uart信息
 
   // connect read and write system calls
-  // to consoleread and consolewrite.
+  // to consoleread and consolewrite. 把syscall连接到consoleread/write
   devsw[CONSOLE].read = consoleread;
   devsw[CONSOLE].write = consolewrite;
 }
