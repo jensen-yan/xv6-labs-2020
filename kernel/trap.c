@@ -10,6 +10,7 @@ struct spinlock tickslock;
 uint ticks;
 
 extern char trampoline[], uservec[], userret[];
+extern int ref_cnts[];
 
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
@@ -50,7 +51,43 @@ usertrap(void)
   // save user program counter.
   p->trapframe->epc = r_sepc();
   
-  if(r_scause() == 8){
+  if(r_scause() == 13 || r_scause() == 15){
+    // page fault
+    // 对于COW页, kalloc分配一页, memmove复制, 写入W位, 删除C位
+    uint64 vaddr = r_stval();
+    vaddr = PGROUNDDOWN(vaddr);   // 页对齐
+    // if(vaddr == PGSIZE)
+    //   panic("guard page"); // 访问到保护页了, 直接panic, 默认不访问到这里吧
+    pte_t *pte;
+    if((pte = walk(p->pagetable, vaddr, 0)) == 0)  // 原有的pte
+      exit(-1);
+      // panic("page fault walk fail");
+    if((*pte & PTE_C) == 0)
+      exit(-1);
+      // panic("not cow page!");   // 发送例外, 保证是cow页
+    uint64 paddr = PTE2PA(*pte);
+    int idx = (paddr - KERNBASE) / PGSIZE;
+    if(ref_cnts[idx] == 2){   // 只有1个进程指向这一页, 直接用这一页
+      *pte &= ~PTE_C;
+      *pte |= PTE_W;    // 让这一页可写就行了吧
+    }
+    // else: 对于多进程共享这一页
+    char *mem;
+    if((mem = kalloc()) == 0){
+      // panic("trap: no free mem");
+      exit(-1);   // 没空间, 杀进程
+      // p->killed = 1;
+    }
+    ref_cnts[idx]--;  // 让共享的那一页cnt--
+    memmove(mem, (char*)paddr, PGSIZE);  // 复制内容
+    *pte |= PTE_W;
+    *pte &= ~PTE_C;
+    int flags = PTE_FLAGS(*pte);
+    *pte = PA2PTE((uint64)mem) | flags;   // 映射物理页到新页上
+    int idx2 = ((uint64)mem - KERNBASE) / PGSIZE;
+    ref_cnts[idx2]++;
+  }
+  else if(r_scause() == 8){
     // system call
 
     if(p->killed)

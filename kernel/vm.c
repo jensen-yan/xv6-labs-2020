@@ -15,6 +15,8 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
+extern int ref_cnts[];
+
 /*
  * create a direct-map page table for the kernel.
  */
@@ -159,6 +161,8 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     if(*pte & PTE_V)
       panic("remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
+    int idx = (pa - KERNBASE) / PGSIZE;
+    ref_cnts[idx]++;  // 为这一页pa cnt++
     if(a == last)
       break;
     a += PGSIZE;
@@ -186,9 +190,13 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not mapped");
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
+
+    uint64 pa = PTE2PA(*pte);
+    int idx = (pa - KERNBASE) / PGSIZE;
+    ref_cnts[idx]--;    // 删除物理页面映射时, 减少引用数目
     if(do_free){
-      uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+      if(ref_cnts[idx] == 1)  // 只有内核页表持有, 才真正释放页
+        kfree((void*)pa);
     }
     *pte = 0;
   }
@@ -311,7 +319,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -319,12 +326,11 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+    *pte &= ~PTE_W;
+    *pte |= PTE_C;
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+      panic("copy fail");
       goto err;
     }
   }
@@ -361,6 +367,34 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
+    // new: 类似usertrap处理cow缺页异常
+    pte_t *pte;
+    if((pte = walk(pagetable, va0, 0)) == 0)  // 原有的pte
+      panic("page fault walk fail");
+    if(*pte & PTE_C){
+      // panic("not cow page!");   // 发送例外, 保证是cow页
+      int idx = (pa0 - KERNBASE) / PGSIZE;
+      if(ref_cnts[idx] == 2){   // 只有1个进程指向这一页, 直接用这一页
+        *pte &= ~PTE_C;
+        *pte |= PTE_W;    // 让这一页可写就行了吧
+      }
+      // else: 对于多进程共享这一页
+      char *mem;
+      if((mem = kalloc()) == 0){
+        // panic("copyout: kalloc fail");
+        return -1;   // 没空间, 返回了, 在修改cnt前做
+      }
+      ref_cnts[idx]--;  // 让共享的那一页cnt--
+      memmove(mem, (char*)pa0, PGSIZE);  // 复制内容
+      *pte |= PTE_W;
+      *pte &= ~PTE_C;
+      int flags = PTE_FLAGS(*pte);
+      *pte = PA2PTE((uint64)mem) | flags;   // 映射物理页到新页上
+      int idx2 = ((uint64)mem - KERNBASE) / PGSIZE;
+      ref_cnts[idx2]++;
+      pa0 = (uint64)mem;    // 修改pa0指向新的一页
+    }
+
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
@@ -440,3 +474,33 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+// 递归打印页表这一级内容, 这里的level其实是反的, 但没事
+void
+vmprint_level(pagetable_t pagetable, int level){
+  if(level == 3) return;
+  for (int i = 0; i < 512; i++)
+  {
+    pte_t *pte = &pagetable[i];
+    if(*pte & PTE_V){
+      pagetable_t pa = (pagetable_t)PTE2PA(*pte);
+      uint64 flags = PTE_FLAGS(*pte);
+      for (int j = 0; j < level; j++)
+        printf(".. ");
+      int idx = ((uint64)pa - KERNBASE) / PGSIZE;
+      int cnt = ref_cnts[idx];
+      printf("..%d: pte %p pa %p flags %p idx %d cnt %d\n", i, *pte, pa, flags, idx, cnt);
+      vmprint_level(pa, level+1);
+    }
+  }
+}
+
+// 打印页表内容
+void
+vmprint(pagetable_t pagetable){
+  // 调用walk 获取pte
+  // 打印每一行pte
+  printf("page table %p\n", pagetable);
+  // 递归遍历每一个pte, 输出有效的
+  vmprint_level(pagetable, 0);
+} 

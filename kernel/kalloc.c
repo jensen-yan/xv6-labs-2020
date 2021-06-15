@@ -14,6 +14,10 @@ void freerange(void *pa_start, void *pa_end);
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
+#define SIZE ((PHYSTOP - KERNBASE) / PGSIZE)   // 32*1024项
+int ref_cnts[SIZE];   // idx = (pa-Kernelbase) / 4096
+#define PA2IDX(pa) (((uint64)pa - KERNBASE) >> 12)
+
 struct run {
   struct run *next;
 };

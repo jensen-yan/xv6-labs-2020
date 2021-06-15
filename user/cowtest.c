@@ -9,11 +9,12 @@
 // allocate more than half of physical memory,
 // then fork. this will fail in the default
 // kernel, which does not support copy-on-write.
+// 申请大半部分物理空间, 然后fork
 void
 simpletest()
 {
   uint64 phys_size = PHYSTOP - KERNBASE;
-  int sz = (phys_size / 3) * 2;
+  int sz = (phys_size / 3) * 2;   // 0.67 倍物理空间
 
   printf("simple: ");
   
@@ -24,7 +25,7 @@ simpletest()
   }
 
   for(char *q = p; q < p + sz; q += 4096){
-    *(int*)q = getpid();
+    *(int*)q = getpid();  // 每隔一页写个数字
   }
 
   int pid = fork();
@@ -34,12 +35,12 @@ simpletest()
   }
 
   if(pid == 0)
-    exit(0);
+    exit(0);  // 孩子进程直接退出
 
   wait(0);
 
   if(sbrk(-sz) == (char*)0xffffffffffffffffL){
-    printf("sbrk(-%d) failed\n", sz);
+    printf("sbrk(-%d) failed\n", sz);   // 父进程: sbrk会释放所有空间
     exit(-1);
   }
 
@@ -50,35 +51,36 @@ simpletest()
 // this causes more than half of physical memory
 // to be allocated, so it also checks whether
 // copied pages are freed.
+// 3个进程都写cow页, 会申请大半物理空间, 检查是否复制的页被释放了
 void
 threetest()
 {
   uint64 phys_size = PHYSTOP - KERNBASE;
-  int sz = phys_size / 4;
+  int sz = phys_size / 4;   // 0.25空间
   int pid1, pid2;
 
   printf("three: ");
   
-  char *p = sbrk(sz);
+  char *p = sbrk(sz);   // p为起始地址
   if(p == (char*)0xffffffffffffffffL){
     printf("sbrk(%d) failed\n", sz);
     exit(-1);
   }
 
-  pid1 = fork();
+  pid1 = fork();  // fork 1个孩子
   if(pid1 < 0){
     printf("fork failed\n");
     exit(-1);
   }
   if(pid1 == 0){
-    pid2 = fork();
+    pid2 = fork();  // 孩子fork孙子
     if(pid2 < 0){
       printf("fork failed");
       exit(-1);
     }
     if(pid2 == 0){
       for(char *q = p; q < p + (sz/5)*4; q += 4096){
-        *(int*)q = getpid();
+        *(int*)q = getpid();  // 孙子写cow页
       }
       for(char *q = p; q < p + (sz/5)*4; q += 4096){
         if(*(int*)q != getpid()){
@@ -89,16 +91,16 @@ threetest()
       exit(-1);
     }
     for(char *q = p; q < p + (sz/2); q += 4096){
-      *(int*)q = 9999;
+      *(int*)q = 9999;  // 儿子写cow页
     }
     exit(0);
   }
 
   for(char *q = p; q < p + sz; q += 4096){
-    *(int*)q = getpid();
+    *(int*)q = getpid();  // 父亲写cow页
   }
 
-  wait(0);
+  wait(0);  // 父亲等两个孩子结束, 睡1s
 
   sleep(1);
 
@@ -109,7 +111,7 @@ threetest()
     }
   }
 
-  if(sbrk(-sz) == (char*)0xffffffffffffffffL){
+  if(sbrk(-sz) == (char*)0xffffffffffffffffL){  // 释放空间
     printf("sbrk(-%d) failed\n", sz);
     exit(-1);
   }
@@ -123,7 +125,7 @@ char junk2[4096];
 char buf[4096];
 char junk3[4096];
 
-// test whether copyout() simulates COW faults.
+// test whether copyout() simulates COW faults. 测试copyout用了缺页异常方法
 void
 filetest()
 {
