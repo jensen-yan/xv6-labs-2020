@@ -6,8 +6,8 @@
 #include <sys/time.h>
 
 #define NBUCKET 5
-// #define NKEYS 100000
-#define NKEYS 10000
+#define NKEYS 100000
+// #define NKEYS 10000
 
 struct entry {
   int key;
@@ -15,6 +15,7 @@ struct entry {
   struct entry *next;
 };  // 键值对的链表
 struct entry *table[NBUCKET]; // 分成5个桶, 每个通指向一个链表
+pthread_mutex_t t_lock[NBUCKET];  // 每个桶一个锁
 int keys[NKEYS];
 int nthread = 1;
 
@@ -43,6 +44,7 @@ void put(int key, int value)
 
   // is the key already present? 先看key是否存在
   struct entry *e = 0;
+  pthread_mutex_lock(&t_lock[i]);   // 对桶操作前后加锁
   for (e = table[i]; e != 0; e = e->next) {
     if (e->key == key)
       break;
@@ -54,6 +56,7 @@ void put(int key, int value)
     // the new is new.
     insert(key, value, &table[i], table[i]);  // 把键值对存入桶中
   }
+  pthread_mutex_unlock(&t_lock[i]);
 }
 
 static struct entry*
@@ -115,6 +118,14 @@ main(int argc, char *argv[])
   for (int i = 0; i < NKEYS; i++) {
     keys[i] = random();   // 随机初始化10万个key
   }
+  for (int i = 0; i < NBUCKET; i++)
+  {
+    if(pthread_mutex_init(&t_lock[i], NULL) != 0){  // 初始化5个锁
+      printf("init lock fail\n");
+      exit(-1);
+    }
+  }
+  
 
   //
   // first the puts 先puts
