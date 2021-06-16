@@ -6,14 +6,15 @@
 #include <sys/time.h>
 
 #define NBUCKET 5
-#define NKEYS 100000
+// #define NKEYS 100000
+#define NKEYS 10000
 
 struct entry {
   int key;
   int value;
   struct entry *next;
-};
-struct entry *table[NBUCKET];
+};  // 键值对的链表
+struct entry *table[NBUCKET]; // 分成5个桶, 每个通指向一个链表
 int keys[NKEYS];
 int nthread = 1;
 
@@ -32,26 +33,26 @@ insert(int key, int value, struct entry **p, struct entry *n)
   e->key = key;
   e->value = value;
   e->next = n;
-  *p = e;
+  *p = e;   // 新建节点e, 指向链表, 头指向e
 }
 
 static 
 void put(int key, int value)
 {
-  int i = key % NBUCKET;
+  int i = key % NBUCKET;  // 分成5个桶
 
-  // is the key already present?
+  // is the key already present? 先看key是否存在
   struct entry *e = 0;
   for (e = table[i]; e != 0; e = e->next) {
     if (e->key == key)
       break;
   }
   if(e){
-    // update the existing key.
+    // update the existing key. key存在就覆盖value, 好吧
     e->value = value;
   } else {
     // the new is new.
-    insert(key, value, &table[i], table[i]);
+    insert(key, value, &table[i], table[i]);  // 把键值对存入桶中
   }
 }
 
@@ -63,7 +64,7 @@ get(int key)
 
   struct entry *e = 0;
   for (e = table[i]; e != 0; e = e->next) {
-    if (e->key == key) break;
+    if (e->key == key) break;   // 顺序查找链表直到找到对应key节点, 返回
   }
 
   return e;
@@ -72,11 +73,11 @@ get(int key)
 static void *
 put_thread(void *xa)
 {
-  int n = (int) (long) xa; // thread number
+  int n = (int) (long) xa; // thread number 线程号码
   int b = NKEYS/nthread;
 
   for (int i = 0; i < b; i++) {
-    put(keys[b*n + i], n);
+    put(keys[b*n + i], n);  // 每个线程只put对应部分的key(随机生成的)
   }
 
   return NULL;
@@ -107,22 +108,22 @@ main(int argc, char *argv[])
     fprintf(stderr, "Usage: %s nthreads\n", argv[0]);
     exit(-1);
   }
-  nthread = atoi(argv[1]);
-  tha = malloc(sizeof(pthread_t) * nthread);
+  nthread = atoi(argv[1]);  // 获取线程数目
+  tha = malloc(sizeof(pthread_t) * nthread);  // 存放线程号的数组空间, tha指向它
   srandom(0);
-  assert(NKEYS % nthread == 0);
+  assert(NKEYS % nthread == 0); // 1,2,4,10 要被10万整除才行
   for (int i = 0; i < NKEYS; i++) {
-    keys[i] = random();
+    keys[i] = random();   // 随机初始化10万个key
   }
 
   //
-  // first the puts
+  // first the puts 先puts
   //
-  t0 = now();
-  for(int i = 0; i < nthread; i++) {
+  t0 = now(); // 获取时间, s为单位
+  for(int i = 0; i < nthread; i++) {  // 返回线程号存入tha[i], null, 执行函数指针, 参数i为执行函数参数. 成功返回0
     assert(pthread_create(&tha[i], NULL, put_thread, (void *) (long) i) == 0);
   }
-  for(int i = 0; i < nthread; i++) {
+  for(int i = 0; i < nthread; i++) {  // 主线程等待其他线程结束, 返回值存入value
     assert(pthread_join(tha[i], &value) == 0);
   }
   t1 = now();
