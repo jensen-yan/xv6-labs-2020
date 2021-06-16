@@ -1,9 +1,11 @@
 // Saved registers for kernel context switches.
+// 用于上下文切换的, swtch会用到, 包括ra切换运行代码, sp切换运行栈, 12个被调用者保存reg
 struct context {
   uint64 ra;
   uint64 sp;
 
   // callee-saved
+  // caller-saved 不用存, 会保存在用户栈中(需要的话)
   uint64 s0;
   uint64 s1;
   uint64 s2;
@@ -81,6 +83,7 @@ struct trapframe {
 };
 
 enum procstate { UNUSED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+// 5个进程状态: 没使用过, 睡眠中, 准备运行了, 正在运行, 僵尸等待清空
 
 // Per-process state
 struct proc {

@@ -21,6 +21,8 @@ initlock(struct spinlock *lk, char *name)
 void
 acquire(struct spinlock *lk)
 {
+  // 保证在持有锁时候不能进入中断, 释放锁后可能立刻进入中断. 防止有锁时候发生中断, 去处理又可能想获取锁, 产生死锁
+  // 如果进程持有两个锁, 计数, 让两个锁都释放后才能中断
   push_off(); // disable interrupts to avoid deadlock.
   if(holding(lk))
     panic("acquire");
@@ -28,7 +30,7 @@ acquire(struct spinlock *lk)
   // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
   //   a5 = 1
   //   s1 = &lk->locked
-  //   amoswap.w.aq a5, a5, (s1)
+  //   amoswap.w.aq a5, a5, (s1), 让lock=1, 返回a5值为1.(之前holding已经保证lock=0)
   while(__sync_lock_test_and_set(&lk->locked, 1) != 0)
     ;
 

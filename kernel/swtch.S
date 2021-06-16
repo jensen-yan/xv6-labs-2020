@@ -1,7 +1,7 @@
 # Context switch
 #
 #   void swtch(struct context *old, struct context *new);
-# 
+# 把当前上下文存入old中, 从new中恢复出上下文. 上下文应该存储在数据段中
 # Save current registers in old. Load from new.	
 
 
@@ -38,5 +38,8 @@ swtch:
         ld s11, 104(a1)
         
         ret
+        # pc = 新的ra, 切换到新的上下文代码处, sp指向新的栈
+        # eg1: 对于sched调用, ra会返回到scheduler调用地方, 继续运行调度线程, sp指向调度线程的栈
+        # eg2: 对于scheduler调用, ra返回到sched调用处, 继续运行新线程, sp指向新线程内核栈
 
 	

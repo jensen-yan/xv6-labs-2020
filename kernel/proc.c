@@ -124,8 +124,8 @@ found:
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
-  p->context.ra = (uint64)forkret;
-  p->context.sp = p->kstack + PGSIZE;
+  p->context.ra = (uint64)forkret;    // 第一个进程, yield调用swtch返回到forkret?
+  p->context.sp = p->kstack + PGSIZE; // sp指向用户栈页最高虚地址, 栈顶=0x3ffffe000
 
   return p;
 }
@@ -460,32 +460,34 @@ scheduler(void)
   struct cpu *c = mycpu();
   
   c->proc = 0;
-  for(;;){
+  for(;;){    // 调度线程就一直无限循环
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
     
     int nproc = 0;
     for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
+      acquire(&p->lock);  // 首先持有进程锁: 保证进程state, context在运行swtch中保持不变
       if(p->state != UNUSED) {
-        nproc++;
+        nproc++;  // nproc存储正在执行的进程
       }
-      if(p->state == RUNNABLE) {
+      if(p->state == RUNNABLE) {  // 只有处于runnable状态才能切换去运行
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
         p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
+        c->proc = p;  // 修改进程状态, 当前cpu来运行p
+        swtch(&c->context, &p->context);  // cpu调度线程上下文--> 选中进程上下文
+        // sleep, exit, yield调用swtch会返回到这里, 继续for循环, 找下一个进程来运行
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
         c->proc = 0;
       }
-      release(&p->lock);
+      release(&p->lock);  // 处理器负责释放进程锁
     }
-    if(nproc <= 2) {   // only init and sh exist
-      intr_on();
+    if(nproc <= 2) {   // only init and sh exist, 只有init, shell进程, cpu闲置, 就等中断. 
+      // 其他cpu可能干事情, 标记某个进程runable让这个cpu去执行
+      intr_on();   // 在循环外会开中断, 可能有时钟中断, 或者uart接受到键盘输入, 让shell启动干事情了
       asm volatile("wfi");
     }
   }
@@ -498,23 +500,27 @@ scheduler(void)
 // be proc->intena and proc->noff, but that would
 // break in the few places where a lock is held but
 // there's no process.
+// 放弃当前线程, 切换到cpu调度线程. 默认持有进程锁, 修改了状态, 释放其他锁
+// 保存恢复intena: 是内核线程的参数不是cpu的, 本来是proc->intena但会导致小问题: 持有锁但是这里没进程
+// sleep, exit, yield(时钟中断). 三种情况会调用sched! 并且遵守一些约定
 void
 sched(void)
 {
   int intena;
   struct proc *p = myproc();
 
-  if(!holding(&p->lock))
+  if(!holding(&p->lock))  // 默认拥有进程锁, 释放了其他锁, 修改了状态
     panic("sched p->lock");
   if(mycpu()->noff != 1)
     panic("sched locks");
   if(p->state == RUNNING)
     panic("sched running");
-  if(intr_get())
+  if(intr_get())  // 切换进程默认关中断
     panic("sched interruptible");
 
   intena = mycpu()->intena;
-  swtch(&p->context, &mycpu()->context);
+  swtch(&p->context, &mycpu()->context);    // 当前进程上下文 --> cpu调度线程上下文
+  // 把当前上下文存入p->context中, 从cpu->context中恢复出上下文
   mycpu()->intena = intena;
 }
 
@@ -524,7 +530,7 @@ yield(void)
 {
   struct proc *p = myproc();
   acquire(&p->lock);
-  p->state = RUNNABLE;
+  p->state = RUNNABLE;  // 放弃当前进程, 停止运行, 改成准备运行?
   sched();
   release(&p->lock);
 }
