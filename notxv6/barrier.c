@@ -8,9 +8,9 @@ static int nthread = 1;
 static int round = 0;
 
 struct barrier {
-  pthread_mutex_t barrier_mutex;
-  pthread_cond_t barrier_cond;
-  int nthread;      // Number of threads that have reached this round of the barrier
+  pthread_mutex_t barrier_mutex;  // 一个互斥锁
+  pthread_cond_t barrier_cond;    // 一个条件变量
+  int nthread;      // Number of threads that have reached this round of the barrier 到达屏障的线程数目
   int round;     // Barrier round
 } bstate;
 
@@ -29,7 +29,7 @@ barrier()
   //
   // Block until all threads have called barrier() and
   // then increment bstate.round.
-  //
+  // 阻塞直到所有线程都调用了barrier(), round++
   
 }
 
@@ -43,8 +43,8 @@ thread(void *xa)
   for (i = 0; i < 20000; i++) {
     int t = bstate.round;
     assert (i == t);
-    barrier();
-    usleep(random() % 100);
+    barrier();  // 同步后, 同步调用barrier()
+    usleep(random() % 100); // 随机睡眠
   }
 
   return 0;
@@ -66,9 +66,9 @@ main(int argc, char *argv[])
   tha = malloc(sizeof(pthread_t) * nthread);
   srandom(0);
 
-  barrier_init();
+  barrier_init();   // 初始化barrier
 
-  for(i = 0; i < nthread; i++) {
+  for(i = 0; i < nthread; i++) {  // 每个线程执行thread
     assert(pthread_create(&tha[i], NULL, thread, (void *) i) == 0);
   }
   for(i = 0; i < nthread; i++) {
