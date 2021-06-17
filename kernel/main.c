@@ -13,7 +13,7 @@ main()
   if(cpuid() == 0){
     consoleinit();
 #if defined(LAB_PGTBL) || defined(LAB_LOCK)
-    statsinit();
+    statsinit();    // 新加了统计设备
 #endif
     printfinit();
     printf("\n");

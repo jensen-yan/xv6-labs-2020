@@ -11,8 +11,8 @@
 #ifdef LAB_LOCK
 #define NLOCK 500
 
-static struct spinlock *locks[NLOCK];
-struct spinlock lock_locks;
+static struct spinlock *locks[NLOCK];   // 500个自旋锁数组, 内容为锁指针
+struct spinlock lock_locks;   // 全局锁
 
 void
 freelock(struct spinlock *lk)
@@ -33,7 +33,7 @@ findslot(struct spinlock *lk) {
   acquire(&lock_locks);
   int i;
   for (i = 0; i < NLOCK; i++) {
-    if(locks[i] == 0) {
+    if(locks[i] == 0) {   // 找一个空的槽, 指向lk
       locks[i] = lk;
       release(&lock_locks);
       return;
@@ -66,7 +66,7 @@ acquire(struct spinlock *lk)
     panic("acquire");
 
 #ifdef LAB_LOCK
-    __sync_fetch_and_add(&(lk->n), 1);
+    __sync_fetch_and_add(&(lk->n), 1);  // 让n, nts都加锁?
 #endif      
 
   // On RISC-V, sync_lock_test_and_set turns into an atomic swap:

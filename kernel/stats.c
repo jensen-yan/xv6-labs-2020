@@ -15,7 +15,7 @@ static struct {
   char buf[BUFSZ];
   int sz;
   int off;
-} stats;
+} stats;  // lock实验新加的内容: 锁+4096buf+sz+off = stats
 
 int statscopyin(char*, int);
 int statslock(char*, int);

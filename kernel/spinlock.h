@@ -6,7 +6,7 @@ struct spinlock {
   char *name;        // Name of lock.
   struct cpu *cpu;   // The cpu holding the lock.
 #ifdef LAB_LOCK
-  int nts;
+  int nts;           // nts, n和locked的区别?
   int n;
 #endif
 };
