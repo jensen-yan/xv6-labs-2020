@@ -60,16 +60,16 @@ sys_sleep(void)
 
   if(argint(0, &n) < 0)
     return -1;
-  acquire(&tickslock);
-  ticks0 = ticks;
-  while(ticks - ticks0 < n){
+  acquire(&tickslock);  // 先给tickslock加锁
+  ticks0 = ticks;       // 存一下当前时间
+  while(ticks - ticks0 < n){  // 全局时间 - 存的时间 < 睡眠时间n (睡眠时间不够)
     if(myproc()->killed){
       release(&tickslock);
       return -1;
     }
-    sleep(&ticks, &tickslock);
+    sleep(&ticks, &tickslock);  // 继续睡
   }
-  release(&tickslock);
+  release(&tickslock);  // 睡眠时间到, 返回用户态
   return 0;
 }
 

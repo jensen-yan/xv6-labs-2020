@@ -329,6 +329,7 @@ reparent(struct proc *p)
 // Exit the current process.  Does not return.
 // An exited process remains in the zombie state
 // until its parent calls wait().
+// 退出当前进程, 不会返回.保留zombie状态, 直到父亲调用wait()释放资源
 void
 exit(int status)
 {
@@ -379,7 +380,7 @@ exit(int status)
   // Give any children to init.
   reparent(p);
 
-  // Parent might be sleeping in wait().
+  // Parent might be sleeping in wait(). 父进程可能调用wait(p), 睡在自己进程p上, 唤醒父进程
   wakeup1(original_parent);
 
   p->xstate = status;
@@ -388,12 +389,14 @@ exit(int status)
   release(&original_parent->lock);
 
   // Jump into the scheduler, never to return.
-  sched();
+  sched();  // 状态为zombie, 切换到调度器线程后, 不会返回到本线程了.
   panic("zombie exit");
 }
 
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
+// 等待子进程exit, 返回pid. 如果没孩子返回-1
+// 返回状态存入stats中, addr指向它. 用wait(0) 忽略返回状态
 int
 wait(uint64 addr)
 {
@@ -407,26 +410,27 @@ wait(uint64 addr)
 
   for(;;){
     // Scan through table looking for exited children.
+    // 扫描整个进程表, 寻找退出了的孩子
     havekids = 0;
     for(np = proc; np < &proc[NPROC]; np++){
       // this code uses np->parent without holding np->lock.
       // acquiring the lock first would cause a deadlock,
       // since np might be an ancestor, and we already hold p->lock.
-      if(np->parent == p){
+      if(np->parent == p){  // 找到一个孩子
         // np->parent can't change between the check and the acquire()
         // because only the parent changes it, and we're the parent.
-        acquire(&np->lock);
+        acquire(&np->lock); // 有加一个孩子锁?
         havekids = 1;
         if(np->state == ZOMBIE){
-          // Found one.
-          pid = np->pid;
+          // Found one. 找到一个exit的僵尸孩子, 释放它的资源
+          pid = np->pid;  // 孩子退出状态xstate存入addr中
           if(addr != 0 && copyout(p->pagetable, addr, (char *)&np->xstate,
                                   sizeof(np->xstate)) < 0) {
             release(&np->lock);
             release(&p->lock);
             return -1;
           }
-          freeproc(np);
+          freeproc(np);   // 释放孩子资源. 顺序释放两个锁. 退出
           release(&np->lock);
           release(&p->lock);
           return pid;
@@ -441,7 +445,8 @@ wait(uint64 addr)
       return -1;
     }
     
-    // Wait for a child to exit.
+    // 有孩子, 但孩子还没exit, 父亲先睡
+    // Wait for a child to exit. 父进程就睡了, 当子进程exit, 调用wakeup1(parent), 父进程从这里唤醒
     sleep(p, &p->lock);  //DOC: wait-sleep
   }
 }
@@ -521,6 +526,7 @@ sched(void)
   intena = mycpu()->intena;
   swtch(&p->context, &mycpu()->context);    // 当前进程上下文 --> cpu调度线程上下文
   // 把当前上下文存入p->context中, 从cpu->context中恢复出上下文
+  // 只有状态为runnable的进程, 才会继续向后面执行. exit调用不会返回!
   mycpu()->intena = intena;
 }
 
@@ -558,6 +564,7 @@ forkret(void)
 
 // Atomically release lock and sleep on chan.
 // Reacquires lock when awakened.
+// 自动释放当前持有的lk锁. 睡眠在链表chan中. 当被唤醒时会重新拿到lk锁
 void
 sleep(void *chan, struct spinlock *lk)
 {
@@ -569,21 +576,22 @@ sleep(void *chan, struct spinlock *lk)
   // guaranteed that we won't miss any wakeup
   // (wakeup locks p->lock),
   // so it's okay to release lk.
+  // 必须要获取p->lock再调用sched. lk锁可以释放了
   if(lk != &p->lock){  //DOC: sleeplock0
     acquire(&p->lock);  //DOC: sleeplock1
     release(lk);
   }
 
   // Go to sleep.
-  p->chan = chan;
+  p->chan = chan;     // 给进程p->chan赋值成chan
   p->state = SLEEPING;
 
-  sched();
+  sched();    // 唤醒线程会把状态改回runnable, 然后调度器线程调度本线程, 从sched返回继续执行.
 
   // Tidy up.
   p->chan = 0;
 
-  // Reacquire original lock.
+  // Reacquire original lock. 重新获得lk锁
   if(lk != &p->lock){
     release(&p->lock);
     acquire(lk);
@@ -592,12 +600,13 @@ sleep(void *chan, struct spinlock *lk)
 
 // Wake up all processes sleeping on chan.
 // Must be called without any p->lock.
+// 唤醒chan上(一个整数变量)上的所有进程. 调用者不能持有锁p->lock
 void
 wakeup(void *chan)
 {
   struct proc *p;
 
-  for(p = proc; p < &proc[NPROC]; p++) {
+  for(p = proc; p < &proc[NPROC]; p++) {  // 查找整个进程表, 找到睡着的且chan相同进程, 改成runable, 可以被调度了
     acquire(&p->lock);
     if(p->state == SLEEPING && p->chan == chan) {
       p->state = RUNNABLE;
@@ -608,13 +617,14 @@ wakeup(void *chan)
 
 // Wake up p if it is sleeping in wait(); used by exit().
 // Caller must hold p->lock.
+// p进程如果wait()中睡着, 就唤醒p. exit()会调用. 必须持有p->lock 
 static void
 wakeup1(struct proc *p)
 {
   if(!holding(&p->lock))
     panic("wakeup1");
   if(p->chan == p && p->state == SLEEPING) {
-    p->state = RUNNABLE;
+    p->state = RUNNABLE;  // p->chan == p 就是自己
   }
 }
 

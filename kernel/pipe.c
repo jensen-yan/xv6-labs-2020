@@ -12,30 +12,31 @@
 
 struct pipe {
   struct spinlock lock;
-  char data[PIPESIZE];
-  uint nread;     // number of bytes read
+  char data[PIPESIZE];  // 内核中的管道内存缓冲区
+  uint nread;     // number of bytes read, 从缓冲区读出的字节数
   uint nwrite;    // number of bytes written
   int readopen;   // read fd is still open
   int writeopen;  // write fd is still open
 };
 
+// 传入rf, wf, 创建管道
 int
 pipealloc(struct file **f0, struct file **f1)
 {
   struct pipe *pi;
 
   pi = 0;
-  *f0 = *f1 = 0;
+  *f0 = *f1 = 0;  // 文件指针清零, 重新申请两个文件结构
   if((*f0 = filealloc()) == 0 || (*f1 = filealloc()) == 0)
     goto bad;
-  if((pi = (struct pipe*)kalloc()) == 0)
+  if((pi = (struct pipe*)kalloc()) == 0)  // 动态分配pipe结构
     goto bad;
   pi->readopen = 1;
   pi->writeopen = 1;
   pi->nwrite = 0;
   pi->nread = 0;
   initlock(&pi->lock, "pipe");
-  (*f0)->type = FD_PIPE;
+  (*f0)->type = FD_PIPE;    // 给读写文件结构赋值
   (*f0)->readable = 1;
   (*f0)->writable = 0;
   (*f0)->pipe = pi;

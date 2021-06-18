@@ -7,7 +7,7 @@
 #include "defs.h"
 
 struct spinlock tickslock;
-uint ticks;
+uint ticks;   // 不断递增的全局变量, 时间
 
 extern char trampoline[], uservec[], userret[];
 
@@ -163,8 +163,8 @@ void
 clockintr()
 {
   acquire(&tickslock);
-  ticks++;
-  wakeup(&ticks);
+  ticks++;    // 每次时钟中断, 全局时间++(代表10ms)
+  wakeup(&ticks);   // 当前任意线程唤醒一下阻塞的线程, pc跳到sys_sleep循环中, 看看睡眠时间到没有
   release(&tickslock);
 }
 
