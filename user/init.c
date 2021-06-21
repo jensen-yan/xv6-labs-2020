@@ -39,9 +39,10 @@ main(void)
     for(;;){
       // this call to wait() returns if the shell exits,
       // or if a parentless process exits.
+      // init进程一直无限循环, 等待shell退出或者没有父亲的子进程退出. init不会退出!
       wpid = wait((int *) 0);
       if(wpid == pid){
-        // the shell exited; restart it.
+        // the shell exited; restart it. shell退出就重新启动shell
         break;
       } else if(wpid < 0){
         printf("init: wait returned an error\n");

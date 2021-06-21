@@ -133,6 +133,7 @@ found:
 // free a proc structure and the data hanging from it,
 // including user pages.
 // p->lock must be held.
+// 释放进程结构和持有的动态申请堆空间, 包括用户页, 内核栈
 static void
 freeproc(struct proc *p)
 {
@@ -140,7 +141,7 @@ freeproc(struct proc *p)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
   if(p->pagetable)
-    proc_freepagetable(p->pagetable, p->sz);
+    proc_freepagetable(p->pagetable, p->sz);  // 释放整个用户空间
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -348,7 +349,7 @@ exit(int status)
   }
 
   begin_op();
-  iput(p->cwd);
+  iput(p->cwd);   // 释放current work directory的引用计数
   end_op();
   p->cwd = 0;
 
@@ -357,6 +358,8 @@ exit(int status)
   // acquired any other proc lock. so wake up init whether that's
   // necessary or not. init may miss this wakeup, but that seems
   // harmless.
+  // exit会把所有子进程交给initproc(父进程先结束需要init来退出子进程).
+  // 唤醒init可能失败, 但无害
   acquire(&initproc->lock);
   wakeup1(initproc);
   release(&initproc->lock);
@@ -367,6 +370,7 @@ exit(int status)
   // exiting parent, but the result will be a harmless spurious wakeup
   // to a dead or wrong process; proc structs are never re-allocated
   // as anything else.
+  // 获取当前进程父进程作为副本, 先给父进程加锁来转移孩子?
   acquire(&p->lock);
   struct proc *original_parent = p->parent;
   release(&p->lock);
@@ -377,7 +381,7 @@ exit(int status)
 
   acquire(&p->lock);
 
-  // Give any children to init.
+  // Give any children to init. 把所有孩子给init! init会调用wait让它退出
   reparent(p);
 
   // Parent might be sleeping in wait(). 父进程可能调用wait(p), 睡在自己进程p上, 唤醒父进程
@@ -508,6 +512,7 @@ scheduler(void)
 // 放弃当前线程, 切换到cpu调度线程. 默认持有进程锁, 修改了状态, 释放其他锁
 // 保存恢复intena: 是内核线程的参数不是cpu的, 本来是proc->intena但会导致小问题: 持有锁但是这里没进程
 // sleep, exit, yield(时钟中断). 三种情况会调用sched! 并且遵守一些约定
+// 必须释放除了p->lock的其他锁, 对于单核, 如果持有uart锁就切换到其他线程, 另一个线程会无限循环等待uart锁释放, 死锁
 void
 sched(void)
 {
@@ -631,6 +636,7 @@ wakeup1(struct proc *p)
 // Kill the process with the given pid.
 // The victim won't exit until it tries to return
 // to user space (see usertrap() in trap.c).
+// 杀掉指定pid进程. 会在pid进程进入内核态后usrtrap(), 如果killed, 就exit自己
 int
 kill(int pid)
 {
@@ -639,10 +645,10 @@ kill(int pid)
   for(p = proc; p < &proc[NPROC]; p++){
     acquire(&p->lock);
     if(p->pid == pid){
-      p->killed = 1;
+      p->killed = 1;    // 只是先修改进程表killed标志位
       if(p->state == SLEEPING){
         // Wake process from sleep().
-        p->state = RUNNABLE;
+        p->state = RUNNABLE;  // 如果睡着, 唤醒, 让调度器运行它
       }
       release(&p->lock);
       return 0;
