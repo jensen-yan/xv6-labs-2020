@@ -65,6 +65,7 @@ readfile(char *file, int nbytes, int inc)
   close(fd);
 }
 
+// 获取统计数据, print=1打印buf内容
 int ntas(int print)
 {
   int n;
@@ -85,10 +86,10 @@ test0()
 {
   char file[2];
   char dir[2];
-  enum { N = 10, NCHILD = 3 };
+  enum { N = 10, NCHILD = 3 };  // 3个孩子, 10个数
   int m, n;
 
-  dir[0] = '0';
+  dir[0] = '0';   // 一个目录0, 一个文件F
   dir[1] = '\0';
   file[0] = 'F';
   file[1] = '\0';
@@ -97,13 +98,13 @@ test0()
   for(int i = 0; i < NCHILD; i++){
     dir[0] = '0' + i;
     mkdir(dir);
-    if (chdir(dir) < 0) {
+    if (chdir(dir) < 0) {   // 创建目录, 改变当前目录到dir = "i"
       printf("chdir failed\n");
       exit(1);
     }
-    unlink(file);
-    createfile(file, N);
-    if (chdir("..") < 0) {
+    unlink(file);   // 删除文件
+    createfile(file, N);  // 创建大小为10block的文件
+    if (chdir("..") < 0) {  // 进入上个目录
       printf("chdir failed\n");
       exit(1);
     }
@@ -117,12 +118,12 @@ test0()
       exit(-1);
     }
     if(pid == 0){
-      if (chdir(dir) < 0) {
+      if (chdir(dir) < 0) {   // 3个孩子进入3个目录
         printf("chdir failed\n");
         exit(1);
       }
 
-      readfile(file, N*BSIZE, 1);
+      readfile(file, N*BSIZE, 1); // 竞争的从file文件中读数据
 
       exit(0);
     }
@@ -133,7 +134,7 @@ test0()
   }
   printf("test0 results:\n");
   n = ntas(1);
-  if (n-m < 500)
+  if (n-m < 500)  // 竞争数不要太大就好
     printf("test0: OK\n");
   else
     printf("test0: FAIL\n");
@@ -142,7 +143,7 @@ test0()
 void test1()
 {
   char file[3];
-  enum { N = 100, BIG=100, NCHILD=2 };
+  enum { N = 100, BIG=100, NCHILD=2 };  // 两个孩子
   
   printf("start test1\n");
   file[0] = 'B';
@@ -151,7 +152,7 @@ void test1()
     file[1] = '0' + i;
     unlink(file);
     if (i == 0) {
-      createfile(file, BIG);
+      createfile(file, BIG);  // 创建大文件B0, 小文件B1
     } else {
       createfile(file, 1);
     }
@@ -166,7 +167,7 @@ void test1()
     if(pid == 0){
       if (i==0) {
         for (i = 0; i < N; i++) {
-          readfile(file, BIG*BSIZE, BSIZE);
+          readfile(file, BIG*BSIZE, BSIZE);   // 一个孩子读大文件, 另个读小文件
         }
         unlink(file);
         exit(0);
