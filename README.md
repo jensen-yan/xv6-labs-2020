@@ -12,7 +12,7 @@ xv6 2020年实验
 - [x] [Lab lazy: Lazy allocation](https://github.com/jensen-yan/xv6-labs-2020/tree/lazy)
 - [x] [Lab cow: Copy-on-write fork](https://github.com/jensen-yan/xv6-labs-2020/tree/cow)
 - [x] [Lab thread: Multithreading](https://github.com/jensen-yan/xv6-labs-2020/tree/thread)
-- [ ] [Lab lock: Parallelism/locking]
+- [x] [Lab lock: Parallelism/locking](https://github.com/jensen-yan/xv6-labs-2020/tree/lock)
 - [ ] [Lab fs: File system]
 - [ ] [Lab mmap: Mmap]
 - [ ] [Lab net: Network stack]
