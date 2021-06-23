@@ -84,14 +84,14 @@ main(int argc, char *argv[])
   assert((BSIZE % sizeof(struct dinode)) == 0);
   assert((BSIZE % sizeof(struct dirent)) == 0);
 
-  fsfd = open(argv[1], O_RDWR|O_CREAT|O_TRUNC, 0666);
+  fsfd = open(argv[1], O_RDWR|O_CREAT|O_TRUNC, 0666);   // fs.img 的fd
   if(fsfd < 0){
     perror(argv[1]);
     exit(1);
   }
 
   // 1 fs block = 1 disk sector
-  nmeta = 2 + nlog + ninodeblocks + nbitmap;
+  nmeta = 2 + nlog + ninodeblocks + nbitmap;  // 70 = 2 + 2 + 13 + 25
   nblocks = FSSIZE - nmeta;
 
   sb.magic = FSMAGIC;
@@ -106,16 +106,16 @@ main(int argc, char *argv[])
   printf("nmeta %d (boot, super, log blocks %u inode blocks %u, bitmap blocks %u) blocks %d total %d\n",
          nmeta, nlog, ninodeblocks, nbitmap, nblocks, FSSIZE);
 
-  freeblock = nmeta;     // the first free block that we can allocate
+  freeblock = nmeta;     // the first free block that we can allocate 第一个能申请的空闲块70
 
   for(i = 0; i < FSSIZE; i++)
-    wsect(i, zeroes);
+    wsect(i, zeroes);   // 把20万块0写入fs.img中
 
   memset(buf, 0, sizeof(buf));
   memmove(buf, &sb, sizeof(sb));
-  wsect(1, buf);
+  wsect(1, buf);  // superblock 写入fs.img中
 
-  rootino = ialloc(T_DIR);
+  rootino = ialloc(T_DIR);  // 申请一个目录inode
   assert(rootino == ROOTINO);
 
   bzero(&de, sizeof(de));
@@ -176,7 +176,7 @@ main(int argc, char *argv[])
 }
 
 void
-wsect(uint sec, void *buf)
+wsect(uint sec, void *buf)  // 把buf内容写入fs.img的第sec块中
 {
   if(lseek(fsfd, sec * BSIZE, 0) != sec * BSIZE){
     perror("lseek");
@@ -196,7 +196,7 @@ winode(uint inum, struct dinode *ip)
   struct dinode *dip;
 
   bn = IBLOCK(inum, sb);
-  rsect(bn, buf);
+  rsect(bn, buf);   // 读出原来块内容, 修改buf内容后, 有写回fs.img中
   dip = ((struct dinode*)buf) + (inum % IPB);
   *dip = *ip;
   wsect(bn, buf);
@@ -234,11 +234,11 @@ ialloc(ushort type)
   uint inum = freeinode++;
   struct dinode din;
 
-  bzero(&din, sizeof(din));
+  bzero(&din, sizeof(din)); // 让目录inode块变成0
   din.type = xshort(type);
   din.nlink = xshort(1);
   din.size = xint(0);
-  winode(inum, &din);
+  winode(inum, &din); // 写入inum=1到fs.img中
   return inum;
 }
 

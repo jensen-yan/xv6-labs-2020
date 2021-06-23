@@ -13,11 +13,11 @@ struct file {
 #define minor(dev)  ((dev) & 0xFFFF)
 #define	mkdev(m,n)  ((uint)((m)<<16| (n)))
 
-// in-memory copy of an inode
+// in-memory copy of an inode 内存中的inode, 是磁盘dinode的拷贝(内核有C指针指向时候才拷贝)
 struct inode {
   uint dev;           // Device number
   uint inum;          // Inode number
-  int ref;            // Reference count
+  int ref;            // Reference count 记录有多少个内核C指针执行inode
   struct sleeplock lock; // protects everything below here
   int valid;          // inode has been read from disk?
 

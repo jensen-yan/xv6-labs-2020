@@ -199,15 +199,15 @@ ialloc(uint dev, short type)
   struct buf *bp;
   struct dinode *dip;
 
-  for(inum = 1; inum < sb.ninodes; inum++){
+  for(inum = 1; inum < sb.ninodes; inum++){   // 逐块遍历13*1000个inode
     bp = bread(dev, IBLOCK(inum, sb));
     dip = (struct dinode*)bp->data + inum%IPB;
     if(dip->type == 0){  // a free inode
       memset(dip, 0, sizeof(*dip));
-      dip->type = type;
+      dip->type = type;   // 写入标记, 表明这个inode被分配了.
       log_write(bp);   // mark it allocated on the disk
       brelse(bp);
-      return iget(dev, inum);
+      return iget(dev, inum);   // 从inode缓存中返回分配的
     }
     brelse(bp);
   }
@@ -239,6 +239,7 @@ iupdate(struct inode *ip)
 // Find the inode with number inum on device dev
 // and return the in-memory copy. Does not lock
 // the inode and does not read it from disk.
+// 根据dev, inum 找到内存中的inode块, 返回指针. 这里不会从磁盘读, 也不会加锁
 static struct inode*
 iget(uint dev, uint inum)
 {
@@ -246,7 +247,7 @@ iget(uint dev, uint inum)
 
   acquire(&icache.lock);
 
-  // Is the inode already cached?
+  // Is the inode already cached? inode是否被缓存在内存中了?
   empty = 0;
   for(ip = &icache.inode[0]; ip < &icache.inode[NINODE]; ip++){
     if(ip->ref > 0 && ip->dev == dev && ip->inum == inum){
@@ -329,6 +330,9 @@ iunlock(struct inode *ip)
 // to it, free the inode (and its content) on disk.
 // All calls to iput() must be inside a transaction in
 // case it has to free the inode.
+// 删除内存inode的引用. 如果是最后引用, icache会释放它.
+// 如果同时也没目录指向这个inode了, 释放inode内容并写入磁盘.
+// 调用者必须在一个transaction交易中
 void
 iput(struct inode *ip)
 {
@@ -374,6 +378,7 @@ iunlockput(struct inode *ip)
 
 // Return the disk block address of the nth block in inode ip.
 // If there is no such block, bmap allocates one.
+// 返回磁盘的物理块号
 static uint
 bmap(struct inode *ip, uint bn)
 {
@@ -381,7 +386,7 @@ bmap(struct inode *ip, uint bn)
   struct buf *bp;
 
   if(bn < NDIRECT){
-    if((addr = ip->addrs[bn]) == 0)
+    if((addr = ip->addrs[bn]) == 0)   // 对前12, 从addrs找. 地址为0就分配一块并记录到addrs中
       ip->addrs[bn] = addr = balloc(ip->dev);
     return addr;
   }
@@ -391,7 +396,7 @@ bmap(struct inode *ip, uint bn)
     // Load indirect block, allocating if necessary.
     if((addr = ip->addrs[NDIRECT]) == 0)
       ip->addrs[NDIRECT] = addr = balloc(ip->dev);
-    bp = bread(ip->dev, addr);
+    bp = bread(ip->dev, addr);  // 读取间接块内容
     a = (uint*)bp->data;
     if((addr = a[bn]) == 0){
       a[bn] = addr = balloc(ip->dev);
