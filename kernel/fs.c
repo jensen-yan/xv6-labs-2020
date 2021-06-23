@@ -393,13 +393,45 @@ bmap(struct inode *ip, uint bn)
   bn -= NDIRECT;
 
   if(bn < NINDIRECT){
-    // Load indirect block, allocating if necessary.
+    // Load indirect block, allocating if necessary. load 间接块
     if((addr = ip->addrs[NDIRECT]) == 0)
       ip->addrs[NDIRECT] = addr = balloc(ip->dev);
     bp = bread(ip->dev, addr);  // 读取间接块内容
     a = (uint*)bp->data;
+    
+    // load 数据块
     if((addr = a[bn]) == 0){
       a[bn] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    return addr;
+  }
+  bn -= NINDIRECT;
+
+  if(bn < NDOUINDIRECT){
+    // load 双重间接块, addrs[12]
+    if((addr = ip->addrs[NDIRECT+1]) == 0)
+      ip->addrs[NDIRECT+1] = addr = balloc(ip->dev);
+    // 读取双重间接块
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+
+    // load 间接块, 最大addrs[255]
+    uint inAddr = bn / NINDIRECT;   // 间接块地址
+    if((addr = a[inAddr]) == 0){
+      a[inAddr] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    // 读取间接块
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;
+
+    // load 数据块
+    uint in_inAddr = bn - inAddr*NINDIRECT;  // 数据块地址
+    if((addr = a[in_inAddr]) == 0){
+      a[in_inAddr] = addr = balloc(ip->dev);
       log_write(bp);
     }
     brelse(bp);
@@ -414,11 +446,10 @@ bmap(struct inode *ip, uint bn)
 void
 itrunc(struct inode *ip)
 {
-  int i, j;
-  struct buf *bp;
-  uint *a;
+  struct buf *bp, *bpp;
+  uint *a, *aa;
 
-  for(i = 0; i < NDIRECT; i++){
+  for(int i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
       bfree(ip->dev, ip->addrs[i]);
       ip->addrs[i] = 0;
@@ -428,13 +459,37 @@ itrunc(struct inode *ip)
   if(ip->addrs[NDIRECT]){
     bp = bread(ip->dev, ip->addrs[NDIRECT]);
     a = (uint*)bp->data;
-    for(j = 0; j < NINDIRECT; j++){
+    for(int j = 0; j < NINDIRECT; j++){
       if(a[j])
-        bfree(ip->dev, a[j]);
+        bfree(ip->dev, a[j]);   // 有数据块映射, 先释放数据块
     }
     brelse(bp);
-    bfree(ip->dev, ip->addrs[NDIRECT]);
+    bfree(ip->dev, ip->addrs[NDIRECT]); // 释放间接块
     ip->addrs[NDIRECT] = 0;
+  }
+
+  if(ip->addrs[NDIRECT+1]){
+    bp = bread(ip->dev, ip->addrs[NDIRECT+1]);
+    a = (uint*)bp->data;
+    for (int i = 0; i < NINDIRECT; i++)
+    {
+      if(a[i]){   // 有间接块映射, 读间接块.
+        bpp = bread(ip->dev, a[i]);
+        aa = (uint*)bpp->data;
+        for (int j = 0; j < NINDIRECT; j++)
+        {
+          if(aa[j]){  // 有数据块映射, 释放数据块
+            bfree(ip->dev, aa[j]);
+          }
+        }
+        brelse(bpp);
+        bfree(ip->dev, a[i]); // 释放间接块
+        a[i] = 0;   // 删除映射
+      }
+    }
+    brelse(bp);
+    bfree(ip->dev, ip->addrs[NDIRECT+1]); // 释放双重间接块
+    ip->addrs[NDIRECT+1] = 0;
   }
 
   ip->size = 0;
