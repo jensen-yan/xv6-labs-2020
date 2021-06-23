@@ -32,7 +32,7 @@ readsb(int dev, struct superblock *sb)
 {
   struct buf *bp;
 
-  bp = bread(dev, 1);
+  bp = bread(dev, 1);   // 从1号读
   memmove(sb, bp->data, sizeof(*sb));
   brelse(bp);
 }
@@ -40,10 +40,10 @@ readsb(int dev, struct superblock *sb)
 // Init fs
 void
 fsinit(int dev) {
-  readsb(dev, &sb);
+  readsb(dev, &sb);   // dev=1, 从磁盘读超级块
   if(sb.magic != FSMAGIC)
     panic("invalid file system");
-  initlog(dev, &sb);
+  initlog(dev, &sb);  // 初始化log
 }
 
 // Zero a block.

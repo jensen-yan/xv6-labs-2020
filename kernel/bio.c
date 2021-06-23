@@ -67,7 +67,7 @@ bget(uint dev, uint blockno)
     if(b->dev == dev && b->blockno == blockno){
       b->refcnt++;
       release(&bcache.lock);
-      acquiresleep(&b->lock);
+      acquiresleep(&b->lock);   // 持有睡眠锁, buf被当前内核进程独占了, 其他内核进程用不了
       return b;
     }
   }
@@ -119,11 +119,11 @@ brelse(struct buf *b)
   if(!holdingsleep(&b->lock))
     panic("brelse");
 
-  releasesleep(&b->lock);
+  releasesleep(&b->lock);   // 释放buf的睡眠锁, 可以被替换出去了
 
   acquire(&bcache.lock);
   b->refcnt--;
-  if (b->refcnt == 0) {
+  if (b->refcnt == 0) {   // refcnt != 0 表示被bpin了, 还不能放在链表最前面
     // no one is waiting for it.
     b->next->prev = b->prev;
     b->prev->next = b->next;
@@ -137,7 +137,7 @@ brelse(struct buf *b)
 }
 
 void
-bpin(struct buf *b) {
+bpin(struct buf *b) {   // refcnt++ 保证bcache一直持有, 不会被替换出去
   acquire(&bcache.lock);
   b->refcnt++;
   release(&bcache.lock);

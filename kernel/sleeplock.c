@@ -23,9 +23,9 @@ acquiresleep(struct sleeplock *lk)
 {
   acquire(&lk->lk);
   while (lk->locked) {
-    sleep(lk, &lk->lk);
+    sleep(lk, &lk->lk);   // 如果锁被别人拿着, 自己睡
   }
-  lk->locked = 1;
+  lk->locked = 1;   // 获取锁了
   lk->pid = myproc()->pid;
   release(&lk->lk);
 }
@@ -36,12 +36,12 @@ releasesleep(struct sleeplock *lk)
   acquire(&lk->lk);
   lk->locked = 0;
   lk->pid = 0;
-  wakeup(lk);
+  wakeup(lk);   // 释放锁并唤醒等待它的进程
   release(&lk->lk);
 }
 
 int
-holdingsleep(struct sleeplock *lk)
+holdingsleep(struct sleeplock *lk)  // 看是否持有睡锁
 {
   int r;
   

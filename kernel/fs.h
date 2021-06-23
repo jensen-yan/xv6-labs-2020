@@ -11,6 +11,7 @@
 //
 // mkfs computes the super block and builds an initial file system. The
 // super block describes the disk layout:
+// mkfs 计算 superblock并构建一个初始的文件系统
 struct superblock {
   uint magic;        // Must be FSMAGIC
   uint size;         // Size of file system image (blocks)
@@ -20,12 +21,13 @@ struct superblock {
   uint logstart;     // Block number of first log block
   uint inodestart;   // Block number of first inode block
   uint bmapstart;    // Block number of first free map block
+  // bit map 默认一块吗? data block的起始号 = bmapstart + bmapSize
 };
 
 #define FSMAGIC 0x10203040
 
-#define NDIRECT 12
-#define NINDIRECT (BSIZE / sizeof(uint))
+#define NDIRECT 12    // 最大12个目录
+#define NINDIRECT (BSIZE / sizeof(uint))    // 256个inode文件
 #define MAXFILE (NDIRECT + NINDIRECT)
 
 // On-disk inode structure
