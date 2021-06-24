@@ -484,3 +484,9 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_symlink(void)
+{
+  return 0;
+}
