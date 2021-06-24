@@ -116,6 +116,7 @@ sys_fstat(void)
 }
 
 // Create the path new as a link to the same inode as old.
+// 创建inode新引用, 让new -> old 硬链接
 uint64
 sys_link(void)
 {
@@ -126,25 +127,26 @@ sys_link(void)
     return -1;
 
   begin_op();
-  if((ip = namei(old)) == 0){
+  if((ip = namei(old)) == 0){   // 获取old的inode ip
     end_op();
     return -1;
   }
 
   ilock(ip);
-  if(ip->type == T_DIR){
+  if(ip->type == T_DIR){  // old的ip不是目录
     iunlockput(ip);
     end_op();
     return -1;
   }
 
-  ip->nlink++;
+  ip->nlink++;    // 增加链接计数
   iupdate(ip);
   iunlock(ip);
-
-  if((dp = nameiparent(new, name)) == 0)
+  // 寻找new的上级目录, 返回目录的inode dp, new的文件名name(最终目录元素?)
+  if((dp = nameiparent(new, name)) == 0)  
     goto bad;
   ilock(dp);
+  // dirlink 把(name, ip->inum) 写入目录dp中. 并且保证在一个设备上
   if(dp->dev != ip->dev || dirlink(dp, name, ip->inum) < 0){
     iunlockput(dp);
     goto bad;
@@ -203,7 +205,7 @@ sys_unlink(void)
   // Cannot unlink "." or "..".
   if(namecmp(name, ".") == 0 || namecmp(name, "..") == 0)
     goto bad;
-
+  // 从目录dp中找name的ip
   if((ip = dirlookup(dp, name, &off)) == 0)
     goto bad;
   ilock(ip);
@@ -215,11 +217,11 @@ sys_unlink(void)
     goto bad;
   }
 
-  memset(&de, 0, sizeof(de));
+  memset(&de, 0, sizeof(de));   // dp清空有写入新值?
   if(writei(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
     panic("unlink: writei");
   if(ip->type == T_DIR){
-    dp->nlink--;
+    dp->nlink--;  // 对目录/普通文件, nlink--
     iupdate(dp);
   }
   iunlockput(dp);
@@ -238,6 +240,7 @@ bad:
   return -1;
 }
 
+// sys_open/mkdir/mkdev 都会调用, 根据type创建不同文件
 static struct inode*
 create(char *path, short type, short major, short minor)
 {
@@ -253,24 +256,25 @@ create(char *path, short type, short major, short minor)
     iunlockput(dp);
     ilock(ip);
     if(type == T_FILE && (ip->type == T_FILE || ip->type == T_DEVICE))
-      return ip;
+      return ip;  // 文件存在就直接返回
     iunlockput(ip);
     return 0;
   }
 
-  if((ip = ialloc(dp->dev, type)) == 0)
+  if((ip = ialloc(dp->dev, type)) == 0) // 申请一个inode
     panic("create: ialloc");
 
-  ilock(ip);
+  ilock(ip);  // 加速并读磁盘填入dinode元数据
   ip->major = major;
   ip->minor = minor;
-  ip->nlink = 1;
+  ip->nlink = 1;    // nlink=1
   iupdate(ip);
 
-  if(type == T_DIR){  // Create . and .. entries.
+  if(type == T_DIR){  // 对目录: Create . and .. entries.
     dp->nlink++;  // for ".."
     iupdate(dp);
     // No ip->nlink++ for ".": avoid cyclic ref count.
+    // 对. 不会有ip->nlink++ 防止环形refcnt?
     if(dirlink(ip, ".", ip->inum) < 0 || dirlink(ip, "..", dp->inum) < 0)
       panic("create dots");
   }
@@ -304,7 +308,7 @@ sys_open(void)
       return -1;
     }
   } else {
-    if((ip = namei(path)) == 0){
+    if((ip = namei(path)) == 0){  // 获取path的inode ip
       end_op();
       return -1;
     }
@@ -321,7 +325,7 @@ sys_open(void)
     end_op();
     return -1;
   }
-
+  // 申请一个文件结构f. fd
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
       fileclose(f);
@@ -330,6 +334,7 @@ sys_open(void)
     return -1;
   }
 
+  // 给文件结构f赋值
   if(ip->type == T_DEVICE){
     f->type = FD_DEVICE;
     f->major = ip->major;
@@ -345,10 +350,26 @@ sys_open(void)
     itrunc(ip);
   }
 
+  // if(ip->type == T_SYMLINK){  // 对软链接文件
+  //   if(omode & O_NOFOLLOW){   // 不追踪
+  //     f->ip = ip;
+  //   }else{  // 递归追踪, 修改inode
+  //     // 读取ip->data block 中的文件路径(单次)
+  //     char path[MAXPATH];
+  //     memset(path, 0, MAXPATH);
+  //     readi(ip, 0, (uint64)path, 0, MAXPATH);
+  //     // 获取新文件的inode ipp
+  //     ip = namei(path);
+  //     // f->ip = ipp
+  //     f->ip = ip;
+  //   }
+
+  // }
+
   iunlock(ip);
   end_op();
 
-  return fd;
+  return fd;  // 返回文件描述符
 }
 
 uint64
@@ -488,5 +509,27 @@ sys_pipe(void)
 uint64
 sys_symlink(void)
 {
+  // char old[MAXPATH], new[MAXPATH];
+  // struct inode *dp;
+  // memset(old, 0, MAXPATH);
+  // // 获取参数old目标文件路径, new符号链接文件存放的路径
+  // if(argstr(0, old, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0){
+  //   panic("symlink: arg failed");
+  //   return -1;
+  // }
+  // // 获取old的路径, inode
+  // begin_op();
+  // // 创建new 链接文件
+  // dp = create(new, T_SYMLINK, 0, 0);
+  // if(dp == 0){
+  //   end_op();
+  //   panic("symlink faild");
+  //   return -1;
+  // }
+  // // 把path写入data block中
+  // writei(dp, 0, (uint64)old, 0, MAXPATH);
+  // end_op();
+
+
   return 0;
 }

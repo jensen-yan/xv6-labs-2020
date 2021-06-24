@@ -16,10 +16,10 @@ struct file {
 // in-memory copy of an inode 内存中的inode, 是磁盘dinode的拷贝(内核有C指针指向时候才拷贝)
 struct inode {
   uint dev;           // Device number
-  uint inum;          // Inode number
-  int ref;            // Reference count 记录有多少个内核C指针执行inode
-  struct sleeplock lock; // protects everything below here
-  int valid;          // inode has been read from disk?
+  uint inum;          // Inode number 应该是内存中的逻辑inum, 和磁盘上扇区号区别!
+  int ref;            // Reference count 记录有多少个内核C指针指向inode, iget, iput会申请和释放inode指针
+  struct sleeplock lock; // protects everything below here 睡眠锁保护下面的所有内容
+  int valid;          // inode has been read from disk? inode是否是从磁盘中读出的备份?
 
   short type;         // copy of disk inode
   short major;

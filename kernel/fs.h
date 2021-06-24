@@ -56,6 +56,7 @@ struct dinode {
 // Directory is a file containing a sequence of dirent structures.
 #define DIRSIZ 14
 
+// 目录条目dirent = name + inode编号
 struct dirent {
   ushort inum;
   char name[DIRSIZ];
