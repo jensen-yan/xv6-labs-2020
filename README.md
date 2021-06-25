@@ -13,6 +13,6 @@ xv6 2020年实验
 - [x] [Lab cow: Copy-on-write fork](https://github.com/jensen-yan/xv6-labs-2020/tree/cow)
 - [x] [Lab thread: Multithreading](https://github.com/jensen-yan/xv6-labs-2020/tree/thread)
 - [x] [Lab lock: Parallelism/locking](https://github.com/jensen-yan/xv6-labs-2020/tree/lock)
-- [ ] [Lab fs: File system]
+- [x] [Lab fs: File system](https://github.com/jensen-yan/xv6-labs-2020/tree/fs)
 - [ ] [Lab mmap: Mmap]
 - [ ] [Lab net: Network stack]
