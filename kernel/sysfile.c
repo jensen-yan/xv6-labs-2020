@@ -217,11 +217,11 @@ sys_unlink(void)
     goto bad;
   }
 
-  memset(&de, 0, sizeof(de));   // dp清空有写入新值?
+  memset(&de, 0, sizeof(de));   // 把目录项对应的off的dirent变成0
   if(writei(dp, 0, (uint64)&de, off, sizeof(de)) != sizeof(de))
     panic("unlink: writei");
   if(ip->type == T_DIR){
-    dp->nlink--;  // 对目录/普通文件, nlink--
+    dp->nlink--;  // 对目录文件, 父目录nlink--
     iupdate(dp);
   }
   iunlockput(dp);
@@ -257,6 +257,8 @@ create(char *path, short type, short major, short minor)
     ilock(ip);
     if(type == T_FILE && (ip->type == T_FILE || ip->type == T_DEVICE))
       return ip;  // 文件存在就直接返回
+    if(type == T_SYMLINK && ip->type == T_SYMLINK)
+      return ip;  // 对符号链接文件也这样
     iunlockput(ip);
     return 0;
   }
@@ -350,21 +352,37 @@ sys_open(void)
     itrunc(ip);
   }
 
-  // if(ip->type == T_SYMLINK){  // 对软链接文件
-  //   if(omode & O_NOFOLLOW){   // 不追踪
-  //     f->ip = ip;
-  //   }else{  // 递归追踪, 修改inode
-  //     // 读取ip->data block 中的文件路径(单次)
-  //     char path[MAXPATH];
-  //     memset(path, 0, MAXPATH);
-  //     readi(ip, 0, (uint64)path, 0, MAXPATH);
-  //     // 获取新文件的inode ipp
-  //     ip = namei(path);
-  //     // f->ip = ipp
-  //     f->ip = ip;
-  //   }
+  int i = 0;
+  for (; i < 10; i++)  // 最多递归跟踪10次
+  {
+    if(ip->type != T_SYMLINK)
+      break;
+    // 对软链接文件
+    if(omode & O_NOFOLLOW){   // 不追踪
+      f->ip = ip;
+      break;
+    }else{  // 递归追踪, 修改inode
+      // 读取ip->data block 中的文件路径
+      char target[MAXPATH];
+      memset(target, 0, MAXPATH);
+      readi(ip, 0, (uint64)target, 0, MAXPATH);
+      // 获取新文件的inode ipp
+      struct inode *ipp = namei(target);
+      if(ipp == 0){   // 链接目标不存在, 报错
+        iunlock(ip);
+        end_op();
+        return -1;
+      }
+      f->ip = ipp;
 
-  // }
+      iunlock(ip);
+      ip = ipp;   // 递归查下一次, 注意解锁
+      ilock(ip);
+      }
+  }
+  if(i == 10 && ip->type == T_SYMLINK){  // 循环10次查找还是符号链接, 是环形吧
+    fd = -1;  
+  }
 
   iunlock(ip);
   end_op();
@@ -509,27 +527,34 @@ sys_pipe(void)
 uint64
 sys_symlink(void)
 {
-  // char old[MAXPATH], new[MAXPATH];
-  // struct inode *dp;
-  // memset(old, 0, MAXPATH);
-  // // 获取参数old目标文件路径, new符号链接文件存放的路径
-  // if(argstr(0, old, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0){
-  //   panic("symlink: arg failed");
-  //   return -1;
-  // }
-  // // 获取old的路径, inode
-  // begin_op();
-  // // 创建new 链接文件
-  // dp = create(new, T_SYMLINK, 0, 0);
-  // if(dp == 0){
-  //   end_op();
-  //   panic("symlink faild");
-  //   return -1;
-  // }
-  // // 把path写入data block中
-  // writei(dp, 0, (uint64)old, 0, MAXPATH);
-  // end_op();
+  char old[MAXPATH], new[MAXPATH];
+  struct inode *ip;
+  memset(old, 0, MAXPATH);
+  // 获取参数old目标文件路径, new符号链接文件存放的路径
+  if(argstr(0, old, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0){
+    panic("symlink: arg failed");
+    return -1;
+  }
+  // 获取old的路径, inode
+  begin_op();
+  // 如果原来有相同链接文件(old, new都一样), 只用把nlink++就好吧, 不用重复创建了吧, 
+  // 虽然create我加了这个判断, 但是没有nlink++吧, 而且似乎重复写入了数据块
+  // 创建new 链接文件
+  ip = create(new, T_SYMLINK, 0, 0);
+  if(ip == 0){
+    end_op();
+    panic("symlink faild");
+    return -1;
+  }
+  // 把path写入data block中
+  // writei必须持有ip->lock! 又在这里卡住了? create本身会持有锁?
+  // ilock(ip);
+  if(writei(ip, 0, (uint64)old, 0, MAXPATH) != MAXPATH)
+    panic("symlink: writei");
 
+  // iunlock(ip);
+  iunlockput(ip);   // 修改完ip后要释放ip引用并写入磁盘中
+  end_op();
 
   return 0;
 }

@@ -86,19 +86,19 @@ testsymlink(void)
   if (c != 'a')
     fail("failed to read bytes from b");
 
-  unlink("/testsymlink/a");
+  unlink("/testsymlink/a");   // 删除普通文件a后, b无法追踪过去
   if(open("/testsymlink/b", O_RDWR) >= 0)
     fail("Should not be able to open b after deleting a");
 
-  r = symlink("/testsymlink/b", "/testsymlink/a");
+  r = symlink("/testsymlink/b", "/testsymlink/a");  // 创建符号文件a, 指向符号b
   if(r < 0)
     fail("symlink a -> b failed");
 
-  r = open("/testsymlink/b", O_RDWR);
+  r = open("/testsymlink/b", O_RDWR);   // 环形了, 无法读(虽然a文件变了, 但是名字不变, 还是可以指过去)
   if(r >= 0)
     fail("Should not be able to open b (cycle b->a->b->..)\n");
   
-  r = symlink("/testsymlink/nonexistent", "/testsymlink/c");
+  r = symlink("/testsymlink/nonexistent", "/testsymlink/c");  // 无法指向一个空文件
   if(r != 0)
     fail("Symlinking to nonexistent file should succeed\n");
 
